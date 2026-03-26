@@ -1,12 +1,9 @@
 {
   "name": "chatflight",
   "version": "1.0.0",
-  "description": "AI-powered conversational flight search",
   "scripts": {
-    "dev": "vercel dev",
-    "build": "echo 'No build step required'"
+    "build": "mkdir -p public && cp index.html public/ && cp app.js public/"
   },
-  "dependencies": {},
   "engines": {
     "node": ">=18"
   }
