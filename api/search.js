@@ -115,12 +115,8 @@ function processOffers(offers, maxStops) {
         trend: price < 1200 ? 'down' : price > 1600 ? 'up' : 'flat',
       };
     })
-       .sort((a, b) => a.price - b.price)
-    .filter((f, index, self) => index === self.findIndex(t => 
-      t.carrierCode === f.carrierCode && 
-      t.departureTime === f.departureTime && 
-      t.departureDate === f.departureDate
-    ))
+ .sort((a, b) => a.price - b.price)
+    .filter((f, index, self) => index === self.findIndex(t => t.id !== f.id || index === 0))
     .slice(0, 8)
     .map((f, i) => ({ ...f, rank: i + 1 }));
 }
