@@ -1,6 +1,6 @@
-// api/search.js — Flight Search with Mock Data + Duffel Live toggle
+// search.js — Flight Search (Mock + Duffel Live)
 
-const MOCK_MODE = true;
+const MOCK_MODE = true; // Set to false when Duffel live key is ready
 
 const AIRLINES = {
   'QR': { name: 'Qatar Airways', tier: 'A', hub: 'DOH' },
@@ -16,6 +16,11 @@ const AIRLINES = {
   'D7': { name: 'AirAsia X', tier: 'C', hub: 'KUL' },
 };
 
+const BASE_PRICES = {
+  'QR': 1289, 'EK': 1349, 'SQ': 1399, 'QF': 1459, 'CX': 1319,
+  'EY': 1279, 'MH': 1099, 'TK': 1189, 'AI': 989, 'KL': 1229, 'D7': 849
+};
+
 function seedRand(seed) {
   let s = seed;
   return () => {
@@ -25,8 +30,8 @@ function seedRand(seed) {
 }
 
 function addDays(dateStr, days) {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + days);
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + Math.round(days));
   return d.toISOString().split('T')[0];
 }
 
@@ -39,63 +44,70 @@ function minsToHours(mins) {
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
-function generateMockFlights(origin, destination, departDate, returnDate, stayDays, passengers, cabin) {
+function generateMockFlights(origin, destination, departDate, returnDate, stayDays, flexDays, passengers, cabin) {
   const seed = (origin + destination + departDate).split('').reduce((a, c) => a + c.charCodeAt(0), 0);
   const rand = seedRand(seed);
   const flights = [];
-  const cabinMultiplier = { economy: 1, premium_economy: 1.8, business: 3.5, first: 5.5 };
-  const mult = cabinMultiplier[cabin] || 1;
+  const cabinMult = { economy: 1, premium_economy: 1.8, business: 3.5, first: 5.5 }[cabin] || 1;
   const pax = parseInt(passengers) || 1;
-  const airlineCodes = Object.keys(AIRLINES);
+  const flex = parseInt(flexDays) || 0;
 
-  airlineCodes.forEach((code) => {
+  // Calculate the exact stay duration from the provided dates
+  // This is the number of days the user wants to stay - we ALWAYS respect this
+  let exactStayDays = stayDays;
+  if (!exactStayDays && returnDate) {
+    const dep = new Date(departDate + 'T00:00:00');
+    const ret = new Date(returnDate + 'T00:00:00');
+    exactStayDays = Math.round((ret - dep) / (1000 * 60 * 60 * 24));
+  }
+  if (!exactStayDays) exactStayDays = 14;
+
+  Object.keys(AIRLINES).forEach((code) => {
     const airline = AIRLINES[code];
-    const numVariants = Math.floor(rand() * 3) + 1;
+    const variants = flex > 0 ? 3 : 1; // only show variants if flex requested
 
-    for (let v = 0; v < numVariants; v++) {
-      const daysOffset = Math.floor(rand() * 14) - 7;
-      const actualDepart = addDays(departDate, daysOffset);
-      const stay = stayDays || 30;
-      const actualReturn = returnDate
-        ? addDays(returnDate, Math.floor(rand() * 6) - 3)
-        : addDays(actualDepart, stay + Math.floor(rand() * 6) - 3);
+    for (let v = 0; v < variants; v++) {
+      // Depart date offset — only vary if user asked for flexibility
+      const depOffset = flex > 0 ? Math.floor(rand() * (flex * 2 + 1)) - flex : 0;
+      const actualDepartDate = addDays(departDate, depOffset);
 
-      const basePrices = {
-        'QR': 1289, 'EK': 1349, 'SQ': 1399, 'QF': 1459, 'CX': 1319,
-        'EY': 1279, 'MH': 1099, 'TK': 1189, 'AI': 989, 'KL': 1229, 'D7': 849
-      };
-      const base = basePrices[code] || 1200;
-      const variance = Math.round((rand() - 0.5) * 300);
-      const price = Math.round((base + variance) * mult * pax);
+      // Return date = depart + EXACT same stay duration every time
+      // This ensures trip length is always consistent regardless of depart offset
+      const actualReturnDate = addDays(actualDepartDate, exactStayDays);
 
-      const stops = (code === 'D7') ? 1 : (rand() > 0.75 ? 0 : 1);
+      const base = BASE_PRICES[code] || 1200;
+      const variance = Math.round((rand() - 0.5) * 250);
+      const price = Math.round((base + variance) * cabinMult * pax);
+
+      const stops = code === 'D7' ? 1 : (rand() > 0.75 ? 0 : 1);
       const durationMins = stops === 0
         ? Math.round(1380 + rand() * 120)
         : Math.round(1560 + rand() * 240);
 
       const depHour = 6 + Math.floor(rand() * 16);
       const depMin = Math.floor(rand() * 4) * 15;
-      const arrMins = (depHour * 60 + depMin + durationMins) % (24 * 60);
-      const arrHour = Math.floor(arrMins / 60);
-      const arrMin = arrMins % 60;
-      const nextDay = (depHour * 60 + depMin + durationMins) >= 24 * 60;
+      const totalMins = depHour * 60 + depMin + durationMins;
+      const arrHour = Math.floor((totalMins % (24 * 60)) / 60);
+      const arrMin = totalMins % 60;
+      const nextDay = totalMins >= 24 * 60;
 
       const trendRoll = rand();
       const trend = trendRoll > 0.6 ? 'down' : trendRoll > 0.3 ? 'stable' : 'up';
 
       flights.push({
-        id: `mock_${code}_${v}_${actualDepart}`,
+        id: `mock_${code}_${v}_${actualDepartDate}`,
         carrierCode: code,
         carrierName: airline.name,
         tier: airline.tier,
         stops,
         via: stops > 0 ? airline.hub : null,
-        departureDate: formatDisplayDate(actualDepart),
-        returnDate: formatDisplayDate(actualReturn),
-        departureDateRaw: actualDepart,
-        returnDateRaw: actualReturn,
+        departureDate: formatDisplayDate(actualDepartDate),
+        returnDate: formatDisplayDate(actualReturnDate),
+        departureDateRaw: actualDepartDate,
+        returnDateRaw: actualReturnDate,
+        stayDays: exactStayDays,
         departureTime: `${String(depHour).padStart(2,'0')}:${String(depMin).padStart(2,'0')}`,
-        arrivalTime: `${String(arrHour).padStart(2,'0')}:${String(arrMin).padStart(2,'0')}${nextDay ? '+1' : ''}`,
+        arrivalTime: `${String(arrHour).padStart(2,'0')}:${String(arrMin).padStart(2,'0')}${nextDay ? ' +1' : ''}`,
         duration: minsToHours(durationMins),
         durationMins,
         price,
@@ -122,26 +134,16 @@ function parseDuration(iso) {
 }
 
 function formatTime(isoString) {
-  const d = new Date(isoString);
-  return d.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return new Date(isoString).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 function formatDate(isoString) {
-  const d = new Date(isoString);
-  return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
+  return new Date(isoString).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 async function searchDuffel(origin, destination, departDate, returnDate, passengers, cabin) {
   const slices = [{ origin, destination, departure_date: departDate }];
   if (returnDate) slices.push({ origin: destination, destination: origin, departure_date: returnDate });
-
-  const body = {
-    data: {
-      slices,
-      passengers: Array(parseInt(passengers)).fill({ type: 'adult' }),
-      cabin_class: cabin || 'economy',
-    }
-  };
 
   const response = await fetch('https://api.duffel.com/air/offer_requests?return_offers=true', {
     method: 'POST',
@@ -151,13 +153,19 @@ async function searchDuffel(origin, destination, departDate, returnDate, passeng
       'Duffel-Version': 'v2',
       'Accept': 'application/json',
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify({
+      data: {
+        slices,
+        passengers: Array(parseInt(passengers)).fill({ type: 'adult' }),
+        cabin_class: cabin || 'economy',
+      }
+    })
   });
 
   if (!response.ok) throw new Error(`Duffel API error: ${response.status}`);
-
   const data = await response.json();
   const offers = data.data?.offers || [];
+  const pax = parseInt(passengers) || 1;
 
   return offers.map(offer => {
     const slice = offer.slices[0];
@@ -169,7 +177,6 @@ async function searchDuffel(origin, destination, departDate, returnDate, passeng
     const stops = segments.length - 1;
     const duration = parseDuration(slice?.duration || 'PT0H');
     const price = Math.round(parseFloat(offer.total_amount) * (offer.total_currency === 'USD' ? 1.55 : 1));
-    const pax = parseInt(passengers) || 1;
 
     return {
       id: offer.id,
@@ -194,7 +201,7 @@ async function searchDuffel(origin, destination, departDate, returnDate, passeng
   });
 }
 
-function generateRecommendation(flights, params) {
+function generateRecommendation(flights, isMock) {
   if (!flights.length) return 'No flights found for these criteria.';
   const best = flights[0];
   const tierA = flights.filter(f => f.tier === 'A');
@@ -202,16 +209,17 @@ function generateRecommendation(flights, params) {
   const spread = flights[flights.length - 1].price - flights[0].price;
   const falling = flights.filter(f => f.trend === 'down').length;
 
-  let rec = `<strong>Best pick:</strong> ${best.carrierName} departing ${best.departureDate}`;
-  if (best.returnDate) rec += ` · return ${best.returnDate}`;
-  rec += ` — <strong>A$${best.price.toLocaleString()}</strong> per person`;
-  rec += best.stops === 0 ? ', direct.' : `, 1 stop via ${best.via}.`;
+  let rec = `<strong>Best pick:</strong> ${best.carrierName}`;
+  rec += ` departing ${best.departureDate}`;
+  if (best.returnDate) rec += ` · returning ${best.returnDate} (${best.stayDays} day stay)`;
+  rec += ` — <strong>A$${best.pricePerPax.toLocaleString()} per person</strong>`;
+  rec += best.stops === 0 ? ', direct flight.' : `, 1 stop via ${best.via}.`;
 
-  if (spread > 500) rec += ` Big price range (A$${spread.toLocaleString()} spread) — flexible dates pay off here.`;
-  if (falling > 3) rec += ` Prices trending down on ${falling} options — good time to book.`;
-  if (directs.length && directs[0].id !== best.id) rec += ` Cheapest direct: ${directs[0].carrierName} A$${directs[0].price.toLocaleString()}.`;
-  if (tierA.length && tierA[0].id !== best.id) rec += ` Best premium: ${tierA[0].carrierName} A$${tierA[0].price.toLocaleString()}.`;
-  if (params.isMock) rec += ` <span style="opacity:.6;font-size:12px">(Demo data)</span>`;
+  if (spread > 400) rec += ` Prices range A$${flights[0].pricePerPax.toLocaleString()}–A$${flights[flights.length-1].pricePerPax.toLocaleString()} — flexible dates save money.`;
+  if (falling > 2) rec += ` ${falling} airlines showing falling prices — good time to book.`;
+  if (directs.length && directs[0].id !== best.id) rec += ` Cheapest direct: ${directs[0].carrierName} A$${directs[0].pricePerPax.toLocaleString()}.`;
+  if (tierA.length && tierA[0].id !== best.id) rec += ` Best premium: ${tierA[0].carrierName} A$${tierA[0].pricePerPax.toLocaleString()}.`;
+  if (isMock) rec += ` <span style="opacity:.55;font-size:12px">(Demo data)</span>`;
 
   return rec;
 }
@@ -225,7 +233,7 @@ export default async function handler(req, res) {
     departDate,
     returnDate,
     stayDays,
-    flexDays = 3,
+    flexDays = 0,
     passengers = 1,
     cabin = 'economy',
     maxStops = 'any',
@@ -237,13 +245,12 @@ export default async function handler(req, res) {
 
   try {
     let flights = [];
-    const shouldMock = MOCK_MODE;
 
-    if (shouldMock) {
-      flights = generateMockFlights(origin, destination, departDate, returnDate, stayDays, passengers, cabin);
+    if (MOCK_MODE) {
+      flights = generateMockFlights(origin, destination, departDate, returnDate, stayDays, flexDays, passengers, cabin);
     } else {
       const flex = Math.min(parseInt(flexDays) || 0, 3);
-      const baseDate = new Date(departDate);
+      const baseDate = new Date(departDate + 'T00:00:00');
       const datesToSearch = [];
       for (let d = -flex; d <= flex; d++) {
         const sd = new Date(baseDate);
@@ -270,9 +277,9 @@ export default async function handler(req, res) {
     }
 
     flights = flights.sort((a, b) => a.price - b.price).slice(0, 15).map((f, i) => ({ ...f, rank: i + 1 }));
-    const recommendation = generateRecommendation(flights, { isMock: shouldMock });
+    const recommendation = generateRecommendation(flights, MOCK_MODE);
 
-    return res.status(200).json({ flights, recommendation, isMock: shouldMock });
+    return res.status(200).json({ flights, recommendation, isMock: MOCK_MODE });
 
   } catch (err) {
     console.error('Search error:', err);
