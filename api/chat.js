@@ -1,48 +1,59 @@
-// api/chat.js — Vercel Serverless Function
-// Handles AI chat using Anthropic Claude
+// api/chat.js — Agentic AI Chat using Anthropic Claude
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { messages } = req.body;
+  if (!messages || !Array.isArray(messages)) return res.status(400).json({ error: 'Invalid messages' });
 
-  if (!messages || !Array.isArray(messages)) {
-    return res.status(400).json({ error: 'Invalid messages format' });
-  }
+  const systemPrompt = `You are an expert flight search assistant for Chatflight. You help users find the cheapest, best-value flights from Australia.
+
+Your personality: friendly, concise, knowledgeable. You give direct recommendations, not wishy-washy answers.
+
+AIRLINE KNOWLEDGE:
+Tier A (Premium quality): Qatar Airways, Emirates, Singapore Airlines, Qantas, Cathay Pacific, Etihad Airways, ANA, JAL, Lufthansa, British Airways, Air France
+Tier B (Good quality): Malaysia Airlines, Turkish Airlines, KLM, Air India, Ethiopian Airlines, SriLankan Airlines
+Tier C (Budget): AirAsia X, budget carriers
+
+AIRPORT CODES (Australian):
+Sydney=SYD, Melbourne=MEL, Brisbane=BNE, Perth=PER, Adelaide=ADL, Gold Coast=OOL, Cairns=CNS
+
+AIRPORT CODES (International - common):
+London Heathrow=LHR, London Gatwick=LGW, Paris=CDG, Rome=FCO, Amsterdam=AMS
+Barcelona=BCN, Madrid=MAD, Frankfurt=FRA, Zurich=ZRH, Athens=ATH
+Dubai=DXB, Abu Dhabi=AUH, Doha=DOH, Istanbul=IST
+Tokyo Narita=NRT, Tokyo Haneda=HND, Singapore=SIN, Bangkok=BKK
+Hong Kong=HKG, Bali=DPS, Kuala Lumpur=KUL, Seoul=ICN
+New York JFK=JFK, Los Angeles=LAX, San Francisco=SFO, Vancouver=YVR
+
+SEARCH RULES:
+- Default origin is Sydney (SYD) unless stated otherwise
+- If user says "next month" calculate from today: ${new Date().toISOString().split('T')[0]}
+- If user says "couple of months" use 60 days from today as the search window
+- If user mentions a stay duration (e.g. "stay for a month"), set stayDays to that number
+- If user is flexible on dates, set flexDays to 7
+- Default to economy cabin unless specified
+- Always search return flights unless user says one-way
+
+YOUR JOB:
+1. Understand what the user wants, even if vague
+2. Ask ONE clarifying question if critical info is missing (origin city if not Sydney, destination if unclear)
+3. Once you have enough info, trigger a search by including SEARCH_PARAMS at the end
+4. Never make up flight prices — always trigger a real search
+
+WHEN YOU HAVE ENOUGH INFO, end your message with exactly:
+SEARCH_PARAMS:{"origin":"SYD","destination":"AUH","departDate":"2026-05-01","returnDate":"2026-06-01","stayDays":30,"flexDays":7,"passengers":1,"cabin":"economy","maxStops":"any"}
+
+AFTER RESULTS ARE SHOWN, you can:
+- Explain why one option is better than another
+- Compare airlines on quality, food, seats, lounge access
+- Suggest alternative destinations if prices are high
+- Advise on best time to book based on trends
+- Answer any travel question
+
+Keep responses under 3 sentences unless explaining something complex. Be direct and helpful.`;
 
   try {
-    const systemPrompt = `You are a helpful flight search assistant for Chatflight, an AI-powered flight finder. 
-Your job is to help users find the cheapest flights that match their needs.
-
-When a user describes what they want, extract the following search parameters if present:
-- origin: IATA airport code (e.g. SYD for Sydney)
-- destination: IATA airport code (e.g. LHR for London Heathrow)
-- departDate: departure date in YYYY-MM-DD format
-- returnDate: return date in YYYY-MM-DD format (if round trip)
-- flexDays: date flexibility in days (default 3 if user wants cheapest)
-- passengers: number of adult passengers (default 1)
-- cabin: economy / premium_economy / business / first
-- maxStops: 0 for direct, 1 for max 1 stop, "any" for no preference
-
-Common airport codes:
-Sydney=SYD, Melbourne=MEL, Brisbane=BNE, Perth=PER, Adelaide=ADL
-London=LHR, Paris=CDG, Rome=FCO, Amsterdam=AMS, Barcelona=BCN
-Tokyo=NRT, Singapore=SIN, Bangkok=BKK, Bali=DPS, Hong Kong=HKG
-New York=JFK, Los Angeles=LAX, Dubai=DXB, Doha=DOH
-
-Always respond conversationally and helpfully. If you have enough information to search, 
-respond with a JSON block at the END of your message in this exact format:
-SEARCH_PARAMS:{"origin":"SYD","destination":"LHR","departDate":"2026-06-10","returnDate":"2026-06-25","flexDays":3,"passengers":1,"cabin":"economy","maxStops":"1"}
-
-If you need more information, ask ONE clear question. Keep responses concise and friendly.
-Never make up flight prices or availability — the search system will find real options.
-If asked about airline quality, use this guide:
-- Tier A (Premium): Qatar Airways, Emirates, Singapore Airlines, Qantas, Cathay Pacific, ANA, JAL, Lufthansa, BA, Air France
-- Tier B (Quality): Malaysian Airlines, Turkish Airlines, KLM, Air India, Ethiopian Airlines, SriLankan
-- Tier C (Budget): AirAsia X, budget carriers`;
-
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -52,30 +63,29 @@ If asked about airline quality, use this guide:
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
+        max_tokens: 1024,
         system: systemPrompt,
-        messages: messages.slice(-10) // keep last 10 messages for context
+        messages: messages.slice(-12)
       })
     });
 
     if (!response.ok) {
       const err = await response.text();
-      throw new Error(`Anthropic API error: ${err}`);
+      throw new Error(`Anthropic error: ${err}`);
     }
 
     const data = await response.json();
     const fullReply = data.content[0].text;
 
-    // Extract search params if present
     let searchParams = null;
     let reply = fullReply;
 
-    const searchMatch = fullReply.match(/SEARCH_PARAMS:(\{.*?\})/s);
-    if (searchMatch) {
+    const match = fullReply.match(/SEARCH_PARAMS:(\{[^}]+\})/s);
+    if (match) {
       try {
-        searchParams = JSON.parse(searchMatch[1]);
-        // Remove the JSON block from the visible reply
-        reply = fullReply.replace(/SEARCH_PARAMS:\{.*?\}/s, '').trim();
+        searchParams = JSON.parse(match[1]);
+        reply = fullReply.replace(/SEARCH_PARAMS:\{[^}]+\}/s, '').trim();
+        if (!reply) reply = `Got it — searching for the best options now...`;
       } catch (e) {
         console.error('Failed to parse search params', e);
       }
