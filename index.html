@@ -3,29 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Chatflight — Find the cheapest flights</title>
+  <title>Chatflight — AI flight search</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #f5f3ee;
-      --surface: #ffffff;
-      --border: rgba(0,0,0,0.08);
-      --border-md: rgba(0,0,0,0.15);
-      --text: #1a1917;
-      --text-2: #5c5a56;
-      --text-3: #9c9a95;
-      --accent: #1a6b4a;
-      --accent-bg: #e8f5ef;
-      --accent-text: #0f4a32;
-      --warn-bg: #fef3e2;
-      --warn-text: #92530a;
-      --danger-bg: #fef2f2;
-      --danger-text: #991b1b;
-      --info-bg: #eff6ff;
-      --info-text: #1e40af;
-      --radius: 14px;
-      --radius-sm: 8px;
+      --bg: #f5f3ee; --surface: #fff; --border: rgba(0,0,0,0.08); --border-md: rgba(0,0,0,0.15);
+      --text: #1a1917; --text-2: #5c5a56; --text-3: #9c9a95;
+      --accent: #1a6b4a; --accent-bg: #e8f5ef; --accent-text: #0f4a32;
+      --warn-bg: #fef3e2; --warn-text: #92530a; --warn-border: rgba(146,83,10,0.2);
+      --danger-bg: #fef2f2; --danger-text: #991b1b;
+      --info-bg: #eff6ff; --info-text: #1e40af;
+      --radius: 14px; --radius-sm: 8px;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 15px; }
@@ -36,8 +25,9 @@
     .nav-tag { font-size: 11px; padding: 3px 10px; border-radius: 20px; background: var(--accent-bg); color: var(--accent-text); font-weight: 500; }
 
     .container { max-width: 900px; margin: 0 auto; padding: 2rem 1rem 4rem; }
+
     .hero { text-align: center; margin-bottom: 1.75rem; }
-    .hero h1 { font-size: 30px; font-weight: 300; letter-spacing: -0.03em; margin-bottom: .3rem; line-height: 1.2; }
+    .hero h1 { font-size: 30px; font-weight: 300; letter-spacing: -0.03em; margin-bottom: .3rem; }
     .hero h1 em { font-style: italic; color: var(--accent); }
     .hero p { font-size: 14px; color: var(--text-3); }
 
@@ -49,12 +39,12 @@
     .chat-topbar-label { font-size: 13px; font-weight: 500; }
     .chat-topbar-sub { font-size: 12px; color: var(--text-3); margin-left: auto; }
 
-    .chat-messages { padding: 1.25rem; display: flex; flex-direction: column; gap: 10px; min-height: 140px; max-height: 320px; overflow-y: auto; }
-    .msg { display: flex; gap: 8px; align-items: flex-end; max-width: 85%; }
+    .chat-messages { padding: 1.25rem; display: flex; flex-direction: column; gap: 10px; min-height: 150px; max-height: 340px; overflow-y: auto; }
+    .msg { display: flex; gap: 8px; align-items: flex-end; max-width: 88%; }
     .msg.user { align-self: flex-end; flex-direction: row-reverse; }
     .msg-avatar { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 500; background: var(--accent-bg); color: var(--accent-text); }
     .msg.user .msg-avatar { background: var(--text); color: var(--bg); }
-    .msg-bubble { font-size: 13px; line-height: 1.55; padding: .6rem .95rem; border-radius: 14px; border-bottom-left-radius: 3px; background: var(--bg); border: 1px solid var(--border); color: var(--text); }
+    .msg-bubble { font-size: 13px; line-height: 1.6; padding: .65rem 1rem; border-radius: 14px; border-bottom-left-radius: 3px; background: var(--bg); border: 1px solid var(--border); color: var(--text); }
     .msg.user .msg-bubble { background: var(--text); color: var(--bg); border-color: transparent; border-radius: 14px; border-bottom-right-radius: 3px; }
     .msg-bubble.typing { color: var(--text-3); font-style: italic; }
 
@@ -81,70 +71,69 @@
     .field label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); margin-bottom: 5px; font-weight: 500; }
     .field input, .field select { width: 100%; font-size: 13px; font-family: 'DM Sans', sans-serif; padding: 8px 11px; border-radius: var(--radius-sm); border: 1px solid var(--border-md); background: var(--bg); color: var(--text); outline: none; transition: border-color .15s; }
     .field input:focus, .field select:focus { border-color: var(--accent); }
-    .tier-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
     .tier-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); margin-bottom: 6px; font-weight: 500; }
+    .tier-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
     .t-pill { font-size: 12px; font-family: 'DM Sans', sans-serif; padding: 5px 13px; border-radius: 20px; border: 1px solid var(--border-md); background: transparent; color: var(--text-2); cursor: pointer; transition: all .15s; }
     .t-pill.on { background: var(--accent-bg); color: var(--accent-text); border-color: var(--accent); }
-    .search-btn { width: 100%; padding: 11px; font-size: 14px; font-weight: 500; font-family: 'DM Sans', sans-serif; border-radius: var(--radius-sm); border: none; background: var(--accent); color: #fff; cursor: pointer; transition: opacity .15s; letter-spacing: -.01em; }
+    .search-btn { width: 100%; padding: 11px; font-size: 14px; font-weight: 500; font-family: 'DM Sans', sans-serif; border-radius: var(--radius-sm); border: none; background: var(--accent); color: #fff; cursor: pointer; transition: opacity .15s; }
     .search-btn:hover { opacity: .88; }
     .search-btn:disabled { opacity: .45; cursor: not-allowed; }
 
     /* RESULTS */
     .results { margin-top: 1.5rem; }
-    .ai-banner { background: var(--accent-bg); border: 1px solid rgba(26,107,74,.18); border-radius: var(--radius-sm); padding: .9rem 1.1rem; font-size: 13px; color: var(--accent-text); line-height: 1.65; margin-bottom: 1rem; }
-    .warning-banner { background: var(--warn-bg); border: 1px solid rgba(146,83,10,.2); border-radius: var(--radius-sm); padding: .85rem 1.1rem; font-size: 13px; color: var(--warn-text); line-height: 1.6; margin-bottom: .75rem; }
+    .ai-banner { background: var(--accent-bg); border: 1px solid rgba(26,107,74,.18); border-radius: var(--radius-sm); padding: .9rem 1.1rem; font-size: 13px; color: var(--accent-text); line-height: 1.65; margin-bottom: .75rem; }
+    .warning-banner { background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: var(--radius-sm); padding: .85rem 1.1rem; font-size: 13px; color: var(--warn-text); line-height: 1.6; margin-bottom: .75rem; }
+    .mock-banner { background: var(--bg); border: 1px solid var(--border-md); border-radius: var(--radius-sm); padding: .6rem 1rem; font-size: 12px; color: var(--text-3); margin-bottom: .75rem; }
+
     .results-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
     .results-title { font-size: 13px; font-weight: 500; color: var(--text-2); }
-    .results-controls { display: flex; gap: 8px; align-items: center; }
-    .sort-sel, .filter-sel { font-size: 12px; font-family: 'DM Sans', sans-serif; padding: 5px 10px; border-radius: 20px; border: 1px solid var(--border-md); background: var(--surface); color: var(--text-2); outline: none; cursor: pointer; }
-    .mock-tag { font-size: 11px; padding: 3px 9px; border-radius: 10px; background: var(--warn-bg); color: var(--warn-text); }
+    .sort-sel { font-size: 12px; font-family: 'DM Sans', sans-serif; padding: 5px 10px; border-radius: 20px; border: 1px solid var(--border-md); background: var(--surface); color: var(--text-2); outline: none; cursor: pointer; }
 
     /* TABLE */
     .table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     thead tr { background: var(--bg); border-bottom: 1px solid var(--border); }
     th { padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); white-space: nowrap; }
-    th.sort-active { color: var(--accent); }
     td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
     tr:last-child td { border-bottom: none; }
-    tr.top-row { background: #f0faf5; }
-    tr:hover td { background: rgba(0,0,0,.015); }
-    tr.expanded-row td { background: var(--bg); padding: 0; }
+    tr.top-row td { background: #f0faf5; }
+    tr:not(.top-row):not(.exp-row):hover td { background: rgba(0,0,0,.015); }
+    tr.exp-row td { background: var(--bg); padding: 0; }
 
-    .rank-num { font-family: 'DM Mono', monospace; font-size: 14px; color: var(--text-3); }
-    .rank-num.gold { color: #92530a; font-weight: 500; }
-    .airline-name { font-weight: 500; color: var(--text); }
-    .tier-badge { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 8px; margin-left: 5px; font-weight: 500; }
+    .rank-cell { font-family: 'DM Mono', monospace; font-size: 14px; color: var(--text-3); }
+    .rank-cell.gold { color: #92530a; font-weight: 500; }
+    .airline-name { font-weight: 500; }
+    .badge { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 8px; margin-left: 4px; font-weight: 500; }
     .tier-a { background: var(--accent-bg); color: var(--accent-text); }
     .tier-b { background: var(--info-bg); color: var(--info-text); }
     .tier-c { background: var(--bg); color: var(--text-3); border: 1px solid var(--border-md); }
-    .stop-badge { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 8px; }
-    .stop-direct { background: var(--accent-bg); color: var(--accent-text); }
-    .stop-1 { background: var(--warn-bg); color: var(--warn-text); }
-    .price-cell { font-family: 'DM Mono', monospace; font-size: 16px; font-weight: 500; color: var(--text); white-space: nowrap; }
-    .price-sub { font-size: 11px; color: var(--text-3); font-family: 'DM Sans', sans-serif; font-weight: 400; }
+    .stop-direct { background: var(--accent-bg); color: var(--accent-text); font-size: 11px; padding: 2px 7px; border-radius: 8px; display: inline-block; }
+    .stop-1 { background: var(--warn-bg); color: var(--warn-text); font-size: 11px; padding: 2px 7px; border-radius: 8px; display: inline-block; }
+    .price-main { font-family: 'DM Mono', monospace; font-size: 16px; font-weight: 500; }
+    .price-sub { font-size: 11px; color: var(--text-3); }
     .trend-down { color: var(--accent); font-size: 11px; }
     .trend-up { color: var(--danger-text); font-size: 11px; }
     .trend-stable { color: var(--text-3); font-size: 11px; }
-    .expand-btn { background: none; border: none; cursor: pointer; color: var(--text-3); font-size: 16px; padding: 2px 6px; border-radius: 4px; transition: all .15s; line-height: 1; }
+    .expand-btn { background: none; border: none; cursor: pointer; color: var(--text-3); font-size: 18px; line-height: 1; padding: 2px 6px; border-radius: 4px; transition: all .15s; }
     .expand-btn:hover { color: var(--accent); background: var(--accent-bg); }
-    .expanded-content { padding: 1rem 1.25rem; display: flex; gap: 2rem; flex-wrap: wrap; }
-    .exp-section { min-width: 160px; }
-    .exp-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); margin-bottom: 4px; }
-    .exp-value { font-size: 13px; color: var(--text); }
-    .book-btn { font-size: 13px; font-family: 'DM Sans', sans-serif; padding: 8px 18px; border-radius: var(--radius-sm); border: none; background: var(--accent); color: #fff; cursor: pointer; font-weight: 500; transition: opacity .15s; white-space: nowrap; }
+
+    .exp-content { padding: 1rem 1.25rem; display: flex; gap: 2rem; flex-wrap: wrap; align-items: center; }
+    .exp-item { min-width: 120px; }
+    .exp-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); margin-bottom: 3px; }
+    .exp-val { font-size: 13px; color: var(--text); }
+    .book-btn { font-size: 13px; font-family: 'DM Sans', sans-serif; padding: 8px 18px; border-radius: var(--radius-sm); border: none; background: var(--accent); color: #fff; cursor: pointer; font-weight: 500; transition: opacity .15s; }
     .book-btn:hover { opacity: .85; }
-    .no-results { text-align: center; padding: 3rem 1rem; color: var(--text-3); font-size: 14px; }
+
     .loading-state { text-align: center; padding: 2.5rem 1rem; color: var(--text-3); font-size: 14px; }
     .spinner { width: 22px; height: 22px; border: 2px solid var(--border-md); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; margin: 0 auto 12px; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    .no-results { text-align: center; padding: 3rem; color: var(--text-3); font-size: 14px; }
 
     @media (max-width: 600px) {
       .fg2, .fg3 { grid-template-columns: 1fr; }
       .hero h1 { font-size: 24px; }
       nav { padding: .75rem 1rem; }
-      th, td { padding: 9px 10px; }
-      .expanded-content { flex-direction: column; gap: 1rem; }
+      td, th { padding: 9px 10px; }
     }
   </style>
 </head>
@@ -158,7 +147,7 @@
 <div class="container">
   <div class="hero">
     <h1>Find your <em>cheapest</em> flight</h1>
-    <p>Tell me what you need, or search directly below</p>
+    <p>Ask me anything — I'll search, filter and recommend for you</p>
   </div>
 
   <div class="chat-card">
@@ -170,13 +159,13 @@
     <div class="chat-messages" id="chatMessages">
       <div class="msg">
         <div class="msg-avatar">AI</div>
-        <div class="msg-bubble">Hi! Tell me where you want to go and I'll find the best options. Try something like <em>"best return flights Sydney to London over the next 2 months, stay 3 weeks"</em> — I'll scan all the options and rank them for you.</div>
+        <div class="msg-bubble">Hi! Tell me where you want to go and I'll find and analyse the best options for you. Try something like <em>"flights from Sydney to Toronto in June with a stopover in the US"</em> — I'll handle everything.</div>
       </div>
     </div>
     <div class="suggestions" id="suggestions">
-      <button class="sug-btn" onclick="sendSug(this)">Sydney to London, stay 3 weeks, next 2 months</button>
-      <button class="sug-btn" onclick="sendSug(this)">Cheapest flights to Bali in June</button>
-      <button class="sug-btn" onclick="sendSug(this)">Business class SYD to Dubai under $5,000</button>
+      <button class="sug-btn" onclick="sendSug(this)">Sydney to London in May, 2 week stay</button>
+      <button class="sug-btn" onclick="sendSug(this)">Cheapest flights to Bali, flexible dates</button>
+      <button class="sug-btn" onclick="sendSug(this)">Toronto from Sydney, stop in the US, June</button>
     </div>
     <div class="chat-input-row">
       <input class="chat-input" id="chatInput" type="text" placeholder="Where do you want to go?" />
@@ -190,53 +179,62 @@
 
   <div class="form-card">
     <div class="fg2">
-      <div class="field"><label>From</label><input type="text" id="fOrigin" value="SYD" placeholder="e.g. SYD" /></div>
+      <div class="field"><label>From</label><input type="text" id="fOrigin" value="SYD" /></div>
       <div class="field"><label>To</label><input type="text" id="fDest" placeholder="e.g. LHR" /></div>
     </div>
     <div class="fg3">
       <div class="field"><label>Depart</label><input type="date" id="fDepart" /></div>
       <div class="field"><label>Return</label><input type="date" id="fReturn" /></div>
       <div class="field"><label>Flex ± days</label>
-        <select id="fFlex"><option value="0">Exact dates</option><option value="3" selected>± 3 days</option><option value="5">± 5 days</option><option value="7">± 7 days</option></select>
+        <select id="fFlex">
+          <option value="0">Exact dates</option>
+          <option value="3">± 3 days</option>
+          <option value="7">± 7 days</option>
+          <option value="14">± 14 days</option>
+        </select>
       </div>
     </div>
     <div class="fg3">
-      <div class="field"><label>Passengers</label><select id="fPax"><option value="1">1 adult</option><option value="2">2 adults</option><option value="3">3 adults</option></select></div>
-      <div class="field"><label>Cabin</label><select id="fCabin"><option value="economy">Economy</option><option value="premium_economy">Premium Economy</option><option value="business">Business</option><option value="first">First</option></select></div>
-      <div class="field"><label>Max stops</label><select id="fStops"><option value="any">Any</option><option value="0">Direct only</option><option value="1" selected>Max 1 stop</option></select></div>
-    </div>
-    <div class="tier-lbl">Airline tier</div>
-    <div class="tier-row">
-      <button class="t-pill on" data-tier="A" onclick="this.classList.toggle('on')">Tier A — Premium</button>
-      <button class="t-pill on" data-tier="B" onclick="this.classList.toggle('on')">Tier B — Quality</button>
-      <button class="t-pill" data-tier="C" onclick="this.classList.toggle('on')">Tier C — Budget</button>
+      <div class="field"><label>Passengers</label>
+        <select id="fPax"><option value="1">1 adult</option><option value="2">2 adults</option><option value="3">3 adults</option></select>
+      </div>
+      <div class="field"><label>Cabin</label>
+        <select id="fCabin"><option value="economy">Economy</option><option value="premium_economy">Premium Economy</option><option value="business">Business</option><option value="first">First</option></select>
+      </div>
+      <div class="field"><label>Max stops</label>
+        <select id="fStops"><option value="any">Any</option><option value="0">Direct only</option><option value="1">Max 1 stop</option></select>
+      </div>
     </div>
     <button class="search-btn" id="searchBtn" onclick="doFormSearch()">Find best flights</button>
   </div>
 
-  <div class="results" id="results" style="display:none"></div>
+  <div id="results" style="display:none"></div>
 </div>
 
 <script>
+// Set default dates
 const today = new Date();
 const dep = new Date(today); dep.setDate(today.getDate() + 30);
-const ret = new Date(today); ret.setDate(today.getDate() + 51);
+const ret = new Date(today); ret.setDate(today.getDate() + 44);
 document.getElementById('fDepart').value = dep.toISOString().split('T')[0];
 document.getElementById('fReturn').value = ret.toISOString().split('T')[0];
 
 let chatHistory = [];
 let allFlights = [];
-let expandedRow = null;
+let expandedId = null;
 
 document.getElementById('chatInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
 
-function sendSug(btn) { document.getElementById('chatInput').value = btn.textContent.trim(); sendChat(); }
+function sendSug(btn) {
+  document.getElementById('chatInput').value = btn.textContent.trim();
+  sendChat();
+}
 
-function addMsg(role, html) {
+function addMsg(role, html, isTyping) {
   const wrap = document.getElementById('chatMessages');
   const div = document.createElement('div');
   div.className = `msg${role === 'user' ? ' user' : ''}`;
-  div.innerHTML = `<div class="msg-avatar">${role === 'user' ? 'You' : 'AI'}</div><div class="msg-bubble">${html}</div>`;
+  div.innerHTML = `<div class="msg-avatar">${role === 'user' ? 'You' : 'AI'}</div><div class="msg-bubble${isTyping ? ' typing' : ''}">${html}</div>`;
   wrap.appendChild(div);
   wrap.scrollTop = wrap.scrollHeight;
   return div;
@@ -246,36 +244,81 @@ async function sendChat() {
   const input = document.getElementById('chatInput');
   const text = input.value.trim();
   if (!text) return;
+
   document.getElementById('suggestions').style.display = 'none';
   input.value = '';
   addMsg('user', text);
   chatHistory.push({ role: 'user', content: text });
-  const typing = addMsg('assistant', '<em>Thinking...</em>');
-  typing.querySelector('.msg-bubble').classList.add('typing');
+
+  const typing = addMsg('assistant', 'Thinking...', true);
   document.getElementById('sendBtn').disabled = true;
 
   try {
-    const res = await fetch('/chat', {
+    // Phase 1: Extract search params from user message
+    const r1 = await fetch('/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages: chatHistory })
     });
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-    typing.remove();
-    chatHistory.push({ role: 'assistant', content: data.reply });
-    addMsg('assistant', data.reply);
-    if (data.searchParams) {
-      if (data.searchParams.origin) document.getElementById('fOrigin').value = data.searchParams.origin;
-      if (data.searchParams.destination) document.getElementById('fDest').value = data.searchParams.destination;
-      if (data.searchParams.departDate) document.getElementById('fDepart').value = data.searchParams.departDate;
-      if (data.searchParams.returnDate) document.getElementById('fReturn').value = data.searchParams.returnDate;
-      await doSearch(data.searchParams);
+    const d1 = await r1.json();
+    if (d1.error) throw new Error(d1.error);
+
+    if (d1.searchParams) {
+      // We have search params — update typing message
+      typing.querySelector('.msg-bubble').textContent = d1.reply || 'Searching...';
+      chatHistory.push({ role: 'assistant', content: d1.reply || 'Searching...' });
+
+      // Pre-fill form
+      if (d1.searchParams.origin) document.getElementById('fOrigin').value = d1.searchParams.origin;
+      if (d1.searchParams.destination) document.getElementById('fDest').value = d1.searchParams.destination;
+      if (d1.searchParams.departDate) document.getElementById('fDepart').value = d1.searchParams.departDate;
+      if (d1.searchParams.returnDate) document.getElementById('fReturn').value = d1.searchParams.returnDate;
+
+      // Show searching state
+      showLoading(`Searching flights and analysing against your request...`);
+
+      // Phase 2: Fetch raw flights
+      const r2 = await fetch('/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(d1.searchParams)
+      });
+      const d2 = await r2.json();
+      if (d2.error) throw new Error(d2.error);
+
+      // Phase 3: Send raw flights back to Claude for analysis
+      const r3 = await fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: chatHistory,
+          pendingFlights: d2.flights,
+          originalRequest: text
+        })
+      });
+      const d3 = await r3.json();
+      if (d3.error) throw new Error(d3.error);
+
+      // Show Claude's analysis as a chat message
+      addMsg('assistant', d3.reply);
+      chatHistory.push({ role: 'assistant', content: d3.reply });
+
+      // Render results table
+      allFlights = d3.rankedFlights || d2.flights;
+      renderResults(d3, d1.searchParams);
+
+    } else {
+      // No search params yet — Claude is asking a follow-up question
+      typing.remove();
+      addMsg('assistant', d1.reply);
+      chatHistory.push({ role: 'assistant', content: d1.reply });
     }
+
   } catch (err) {
     typing.remove();
-    addMsg('assistant', 'Sorry, something went wrong. Please try again or use the form below.');
+    addMsg('assistant', `Sorry, something went wrong: ${err.message}. Please try again.`);
   }
+
   document.getElementById('sendBtn').disabled = false;
   document.getElementById('chatInput').focus();
 }
@@ -288,68 +331,72 @@ async function doFormSearch() {
   const flexDays = document.getElementById('fFlex').value;
   const passengers = document.getElementById('fPax').value;
   const cabin = document.getElementById('fCabin').value;
-  const maxStops = document.getElementById('fStops').value;
-  if (!origin || !destination || !departDate) { alert('Please fill in origin, destination and departure date.'); return; }
-  await doSearch({ origin, destination, departDate, returnDate, flexDays, passengers, cabin, maxStops });
-}
 
-async function doSearch(params) {
-  const resultsDiv = document.getElementById('results');
-  resultsDiv.style.display = 'block';
-  resultsDiv.innerHTML = `<div class="loading-state"><div class="spinner"></div>Searching flights${params.flexDays > 0 ? ` across ±${params.flexDays} days` : ''}...</div>`;
-  resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  if (!origin || !destination || !departDate) {
+    alert('Please fill in origin, destination and departure date.');
+    return;
+  }
+
+  showLoading('Searching flights...');
   document.getElementById('searchBtn').disabled = true;
 
   try {
-    const res = await fetch('/search', {
+    const r = await fetch('/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params)
+      body: JSON.stringify({ origin, destination, departDate, returnDate, flexDays, passengers, cabin })
     });
-    const data = await res.json();
+    const data = await r.json();
     if (data.error) throw new Error(data.error);
-    allFlights = data.flights || [];
-    renderResults(data, params);
+    allFlights = data.flights.slice(0, 12).map((f, i) => ({ ...f, rank: i + 1 }));
+    renderResults({ rankedFlights: allFlights, warning: '', reply: null }, { origin, destination });
   } catch (err) {
-    resultsDiv.innerHTML = `<div class="no-results">Couldn't fetch flights: ${err.message}</div>`;
+    document.getElementById('results').innerHTML = `<div class="no-results">Error: ${err.message}</div>`;
   }
+
   document.getElementById('searchBtn').disabled = false;
 }
 
+function showLoading(msg) {
+  const r = document.getElementById('results');
+  r.style.display = 'block';
+  r.innerHTML = `<div class="loading-state"><div class="spinner"></div>${msg}</div>`;
+  r.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
 function renderResults(data, params) {
-  const div = document.getElementById('results');
-  if (!allFlights.length) { div.innerHTML = `<div class="no-results">No flights found. Try adjusting your filters or dates.</div>`; return; }
-  const route = `${params.origin || 'SYD'} → ${params.destination}`;
-  div.innerHTML = `
-    ${data.recommendation ? `<div class="ai-banner">${data.recommendation}</div>` : ''}
-    ${data.warnings && data.warnings.length > 0 ? data.warnings.map(w => `<div class="warning-banner">${w}</div>`).join('') : ''}
+  const r = document.getElementById('results');
+  r.style.display = 'block';
+
+  const flights = data.rankedFlights || allFlights;
+  if (!flights || !flights.length) {
+    r.innerHTML = `<div class="no-results">No flights found. Try adjusting your search.</div>`;
+    return;
+  }
+
+  const route = params ? `${params.origin || 'SYD'} → ${params.destination || ''}` : '';
+
+  r.innerHTML = `
+    ${data.warning ? `<div class="warning-banner">⚠ ${data.warning}</div>` : ''}
+    <div class="mock-banner">Demo data — results are simulated. Connect live API for real flights.</div>
     <div class="results-bar">
-      <div class="results-title">${allFlights.length} options · ${route}${data.isMock ? '' : ' · Live prices'}</div>
-      <div class="results-controls">
-        ${data.isMock ? '<span class="mock-tag">Demo data</span>' : ''}
-        <select class="sort-sel" onchange="sortTable(this.value)">
-          <option value="rank">Recommended</option>
-          <option value="price">Cheapest first</option>
-          <option value="stops">Fewest stops</option>
-          <option value="duration">Shortest flight</option>
-        </select>
-        <select class="filter-sel" onchange="filterTable(this.value)">
-          <option value="all">All tiers</option>
-          <option value="A">Tier A only</option>
-          <option value="B">Tier B only</option>
-          <option value="C">Tier C only</option>
-        </select>
-      </div>
+      <div class="results-title">${flights.length} options${route ? ' · ' + route : ''}</div>
+      <select class="sort-sel" onchange="sortBy(this.value)">
+        <option value="rank">AI recommended</option>
+        <option value="price">Cheapest first</option>
+        <option value="stops">Fewest stops</option>
+        <option value="duration">Shortest flight</option>
+      </select>
     </div>
     <div class="table-wrap">
-      <table id="flightTable">
+      <table>
         <thead>
           <tr>
             <th>#</th>
             <th>Airline</th>
             <th>Depart</th>
             <th>Return</th>
-            <th>Route</th>
+            <th>Stopover</th>
             <th>Duration</th>
             <th>Trend</th>
             <th>Price (A$)</th>
@@ -358,86 +405,79 @@ function renderResults(data, params) {
         </thead>
         <tbody id="flightBody"></tbody>
       </table>
-    </div>`;
-  renderRows(allFlights);
+    </div>
+  `;
+
+  renderRows(flights);
 }
 
 function renderRows(flights) {
   const tbody = document.getElementById('flightBody');
   if (!tbody) return;
   tbody.innerHTML = '';
+
   flights.forEach((f, i) => {
     const isTop = i === 0;
+    const tierClass = { A: 'tier-a', B: 'tier-b', C: 'tier-c' }[f.tier] || 'tier-b';
+    const trendClass = f.trend === 'down' ? 'trend-down' : f.trend === 'up' ? 'trend-up' : 'trend-stable';
+    const stopLabel = f.stops === 0 ? 'Direct' : `${f.stopoverCity || f.stopoverCode || '?'} (${f.stopoverRegion || ''})`;
+    const stopClass = f.stops === 0 ? 'stop-direct' : 'stop-1';
+
     const tr = document.createElement('tr');
     if (isTop) tr.className = 'top-row';
-    const tierClass = { A: 'tier-a', B: 'tier-b', C: 'tier-c' }[f.tier] || 'tier-b';
-    const stopClass = f.stops === 0 ? 'stop-direct' : 'stop-1';
-    const stopLabel = f.stops === 0 ? 'Direct' : `1 stop · ${f.via || '?'}`;
-    const trendClass = f.trend === 'down' ? 'trend-down' : f.trend === 'up' ? 'trend-up' : 'trend-stable';
     tr.innerHTML = `
-      <td><span class="rank-num ${i === 0 ? 'gold' : ''}">${i + 1}</span></td>
-      <td><span class="airline-name">${f.carrierName}</span><span class="tier-badge ${tierClass}">Tier ${f.tier}</span></td>
-      <td>${f.departureDate}</td>
-      <td>${f.returnDate || '—'}</td>
-      <td><span class="stop-badge ${stopClass}">${stopLabel}</span></td>
-      <td style="color:var(--text-2);font-family:'DM Mono',monospace">${f.duration}</td>
+      <td><span class="rank-cell ${i === 0 ? 'gold' : ''}">${i + 1}</span></td>
+      <td><span class="airline-name">${f.carrierName}</span><span class="badge ${tierClass}">Tier ${f.tier}</span></td>
+      <td style="white-space:nowrap">${f.departureDate}<br><span style="font-size:11px;color:var(--text-3)">${f.departureTime}</span></td>
+      <td style="white-space:nowrap">${f.returnDate || '—'}</td>
+      <td><span class="${stopClass}">${stopLabel}</span></td>
+      <td style="font-family:'DM Mono',monospace;color:var(--text-2)">${f.duration}</td>
       <td><span class="${trendClass}">${f.trendNote}</span></td>
-      <td><div class="price-cell">$${f.pricePerPax.toLocaleString()}</div><div class="price-sub">per person</div></td>
-      <td><button class="expand-btn" onclick="toggleRow(this, '${f.id}')">+</button></td>`;
+      <td><div class="price-main">$${f.pricePerPax.toLocaleString()}</div><div class="price-sub">per person</div></td>
+      <td><button class="expand-btn" onclick="toggleRow(this,'${f.id}')">+</button></td>`;
     tbody.appendChild(tr);
 
     const expTr = document.createElement('tr');
-    expTr.className = 'expanded-row';
+    expTr.className = 'exp-row';
     expTr.id = `exp_${f.id}`;
     expTr.style.display = 'none';
-    expTr.innerHTML = `<td colspan="9"><div class="expanded-content">
-      <div class="exp-section"><div class="exp-label">Departure</div><div class="exp-value">${f.departureTime} · ${f.departureDate}</div></div>
-      <div class="exp-section"><div class="exp-label">Arrival</div><div class="exp-value">${f.arrivalTime}</div></div>
-      ${f.via ? `<div class="exp-section"><div class="exp-label">Stopover</div><div class="exp-value">${f.via}</div></div>` : ''}
-      <div class="exp-section"><div class="exp-label">Total price</div><div class="exp-value" style="font-weight:500">A$${f.price.toLocaleString()} all passengers</div></div>
-      <div class="exp-section"><div class="exp-label">Cabin</div><div class="exp-value">Economy</div></div>
-      <div style="margin-left:auto;align-self:center"><button class="book-btn" onclick="bookFlight('${f.id}')">Book this flight →</button></div>
+    expTr.innerHTML = `<td colspan="9"><div class="exp-content">
+      <div class="exp-item"><div class="exp-label">Departure</div><div class="exp-val">${f.departureTime} · ${f.departureDate}</div></div>
+      <div class="exp-item"><div class="exp-label">Arrival</div><div class="exp-val">${f.arrivalTime}</div></div>
+      <div class="exp-item"><div class="exp-label">Stay</div><div class="exp-val">${f.stayDays} days</div></div>
+      <div class="exp-item"><div class="exp-label">Total price</div><div class="exp-val" style="font-weight:500">A$${f.price.toLocaleString()} all pax</div></div>
+      ${f.stops > 0 ? `<div class="exp-item"><div class="exp-label">Stopover</div><div class="exp-val">${f.stopoverCity} · ${f.stopoverRegion}</div></div>` : ''}
+      <div style="margin-left:auto"><button class="book-btn" onclick="book('${f.id}')">Book →</button></div>
     </div></td>`;
     tbody.appendChild(expTr);
   });
 }
 
 function toggleRow(btn, id) {
-  const row = document.getElementById(`exp_${id}`);
-  const isOpen = row.style.display !== 'none';
-  if (expandedRow && expandedRow !== id) {
-    const prev = document.getElementById(`exp_${expandedRow}`);
-    if (prev) { prev.style.display = 'none'; }
+  if (expandedId && expandedId !== id) {
+    const prev = document.getElementById(`exp_${expandedId}`);
+    if (prev) prev.style.display = 'none';
     const prevBtn = prev?.previousElementSibling?.querySelector('.expand-btn');
     if (prevBtn) prevBtn.textContent = '+';
   }
-  row.style.display = isOpen ? 'none' : 'table-row';
-  btn.textContent = isOpen ? '+' : '−';
-  expandedRow = isOpen ? null : id;
+  const row = document.getElementById(`exp_${id}`);
+  const open = row.style.display !== 'none';
+  row.style.display = open ? 'none' : 'table-row';
+  btn.textContent = open ? '+' : '−';
+  expandedId = open ? null : id;
 }
 
-function sortTable(val) {
+function sortBy(val) {
   let sorted = [...allFlights];
   if (val === 'price') sorted.sort((a, b) => a.price - b.price);
   else if (val === 'stops') sorted.sort((a, b) => a.stops - b.stops);
   else if (val === 'duration') sorted.sort((a, b) => a.durationMins - b.durationMins);
-  else sorted.sort((a, b) => a.rank - b.rank);
+  else sorted.sort((a, b) => (a.rank || 99) - (b.rank || 99));
   renderRows(sorted);
 }
 
-function filterTable(tier) {
-  const filtered = tier === 'all' ? allFlights : allFlights.filter(f => f.tier === tier);
-  renderRows(filtered);
-}
-
-function bookFlight(id) {
-  const f = allFlights.find(x => x.id === id);
-  if (!f) return;
-  if (f.isMock) {
-    alert(`Demo mode — connect live Duffel API for real booking links.\n\n${f.carrierName}\nDepart: ${f.departureDate}\nPrice: A$${f.price.toLocaleString()}`);
-  } else {
-    alert('Booking integration coming soon.');
-  }
+function book(id) {
+  alert('Demo mode — connect live Duffel API to enable real booking.');
 }
 </script>
 </body>
