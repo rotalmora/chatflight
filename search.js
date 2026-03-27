@@ -1,24 +1,29 @@
-// search.js — Flight Search (Mock + Duffel Live)
+// search.js — Flight Search with constraint awareness
 
-const MOCK_MODE = true; // Set to false when Duffel live key is ready
+const MOCK_MODE = true; // Set to false when ready for live Duffel data
 
 const AIRLINES = {
-  'QR': { name: 'Qatar Airways', tier: 'A', hub: 'DOH' },
-  'EK': { name: 'Emirates', tier: 'A', hub: 'DXB' },
-  'SQ': { name: 'Singapore Airlines', tier: 'A', hub: 'SIN' },
-  'QF': { name: 'Qantas', tier: 'A', hub: 'SIN' },
-  'CX': { name: 'Cathay Pacific', tier: 'A', hub: 'HKG' },
-  'EY': { name: 'Etihad Airways', tier: 'A', hub: 'AUH' },
-  'MH': { name: 'Malaysia Airlines', tier: 'B', hub: 'KUL' },
-  'TK': { name: 'Turkish Airlines', tier: 'B', hub: 'IST' },
-  'AI': { name: 'Air India', tier: 'B', hub: 'DEL' },
-  'KL': { name: 'KLM', tier: 'B', hub: 'AMS' },
-  'D7': { name: 'AirAsia X', tier: 'C', hub: 'KUL' },
+  'QR': { name: 'Qatar Airways', tier: 'A', hub: 'DOH', hubCity: 'Doha', hubRegion: 'middleeast' },
+  'EK': { name: 'Emirates', tier: 'A', hub: 'DXB', hubCity: 'Dubai', hubRegion: 'middleeast' },
+  'SQ': { name: 'Singapore Airlines', tier: 'A', hub: 'SIN', hubCity: 'Singapore', hubRegion: 'asia' },
+  'QF': { name: 'Qantas', tier: 'A', hub: 'SIN', hubCity: 'Singapore', hubRegion: 'asia' },
+  'CX': { name: 'Cathay Pacific', tier: 'A', hub: 'HKG', hubCity: 'Hong Kong', hubRegion: 'asia' },
+  'EY': { name: 'Etihad Airways', tier: 'A', hub: 'AUH', hubCity: 'Abu Dhabi', hubRegion: 'middleeast' },
+  'AA': { name: 'American Airlines', tier: 'B', hub: 'DFW', hubCity: 'Dallas', hubRegion: 'us' },
+  'UA': { name: 'United Airlines', tier: 'B', hub: 'LAX', hubCity: 'Los Angeles', hubRegion: 'us' },
+  'AC': { name: 'Air Canada', tier: 'B', hub: 'YVR', hubCity: 'Vancouver', hubRegion: 'canada' },
+  'MH': { name: 'Malaysia Airlines', tier: 'B', hub: 'KUL', hubCity: 'Kuala Lumpur', hubRegion: 'asia' },
+  'TK': { name: 'Turkish Airlines', tier: 'B', hub: 'IST', hubCity: 'Istanbul', hubRegion: 'europe' },
+  'AI': { name: 'Air India', tier: 'B', hub: 'DEL', hubCity: 'Delhi', hubRegion: 'asia' },
+  'KL': { name: 'KLM', tier: 'B', hub: 'AMS', hubCity: 'Amsterdam', hubRegion: 'europe' },
+  'LH': { name: 'Lufthansa', tier: 'A', hub: 'FRA', hubCity: 'Frankfurt', hubRegion: 'europe' },
+  'D7': { name: 'AirAsia X', tier: 'C', hub: 'KUL', hubCity: 'Kuala Lumpur', hubRegion: 'asia' },
 };
 
 const BASE_PRICES = {
   'QR': 1289, 'EK': 1349, 'SQ': 1399, 'QF': 1459, 'CX': 1319,
-  'EY': 1279, 'MH': 1099, 'TK': 1189, 'AI': 989, 'KL': 1229, 'D7': 849
+  'EY': 1279, 'AA': 1599, 'UA': 1549, 'AC': 1489, 'MH': 1099,
+  'TK': 1189, 'AI': 989, 'KL': 1229, 'LH': 1379, 'D7': 849
 };
 
 function seedRand(seed) {
@@ -52,8 +57,6 @@ function generateMockFlights(origin, destination, departDate, returnDate, stayDa
   const pax = parseInt(passengers) || 1;
   const flex = parseInt(flexDays) || 0;
 
-  // Calculate the exact stay duration from the provided dates
-  // This is the number of days the user wants to stay - we ALWAYS respect this
   let exactStayDays = stayDays;
   if (!exactStayDays && returnDate) {
     const dep = new Date(departDate + 'T00:00:00');
@@ -64,25 +67,21 @@ function generateMockFlights(origin, destination, departDate, returnDate, stayDa
 
   Object.keys(AIRLINES).forEach((code) => {
     const airline = AIRLINES[code];
-    const variants = flex > 0 ? 3 : 1; // only show variants if flex requested
+    const variants = flex > 0 ? 2 : 1;
 
     for (let v = 0; v < variants; v++) {
-      // Depart date offset — only vary if user asked for flexibility
       const depOffset = flex > 0 ? Math.floor(rand() * (flex * 2 + 1)) - flex : 0;
-      const actualDepartDate = addDays(departDate, depOffset);
-
-      // Return date = depart + EXACT same stay duration every time
-      // This ensures trip length is always consistent regardless of depart offset
+      const actualDepartDate = depOffset !== 0 ? addDays(departDate, depOffset) : departDate;
       const actualReturnDate = addDays(actualDepartDate, exactStayDays);
 
       const base = BASE_PRICES[code] || 1200;
       const variance = Math.round((rand() - 0.5) * 250);
       const price = Math.round((base + variance) * cabinMult * pax);
 
-      const stops = code === 'D7' ? 1 : (rand() > 0.75 ? 0 : 1);
+      const stops = (code === 'D7' || code === 'AA' || code === 'UA' || code === 'AC') ? 1 : (rand() > 0.7 ? 0 : 1);
       const durationMins = stops === 0
         ? Math.round(1380 + rand() * 120)
-        : Math.round(1560 + rand() * 240);
+        : Math.round(1560 + rand() * 300);
 
       const depHour = 6 + Math.floor(rand() * 16);
       const depMin = Math.floor(rand() * 4) * 15;
@@ -101,6 +100,8 @@ function generateMockFlights(origin, destination, departDate, returnDate, stayDa
         tier: airline.tier,
         stops,
         via: stops > 0 ? airline.hub : null,
+        viaCity: stops > 0 ? airline.hubCity : null,
+        viaRegion: stops > 0 ? airline.hubRegion : null,
         departureDate: formatDisplayDate(actualDepartDate),
         returnDate: formatDisplayDate(actualReturnDate),
         departureDateRaw: actualDepartDate,
@@ -164,19 +165,19 @@ async function searchDuffel(origin, destination, departDate, returnDate, passeng
 
   if (!response.ok) throw new Error(`Duffel API error: ${response.status}`);
   const data = await response.json();
-  const offers = data.data?.offers || [];
   const pax = parseInt(passengers) || 1;
 
-  return offers.map(offer => {
+  return (data.data?.offers || []).map(offer => {
     const slice = offer.slices[0];
     const segments = slice?.segments || [];
     const firstSeg = segments[0];
     const lastSeg = segments[segments.length - 1];
     const carrierCode = firstSeg?.marketing_carrier?.iata_code || '??';
-    const airline = AIRLINES[carrierCode] || { name: firstSeg?.marketing_carrier?.name || carrierCode, tier: 'B' };
+    const airline = AIRLINES[carrierCode] || { name: firstSeg?.marketing_carrier?.name || carrierCode, tier: 'B', hubRegion: 'unknown' };
     const stops = segments.length - 1;
     const duration = parseDuration(slice?.duration || 'PT0H');
     const price = Math.round(parseFloat(offer.total_amount) * (offer.total_currency === 'USD' ? 1.55 : 1));
+    const stopAirport = stops > 0 ? segments[0]?.destination?.iata_code : null;
 
     return {
       id: offer.id,
@@ -184,7 +185,9 @@ async function searchDuffel(origin, destination, departDate, returnDate, passeng
       carrierName: airline.name,
       tier: airline.tier,
       stops,
-      via: stops > 0 ? segments[0]?.destination?.iata_code : null,
+      via: stopAirport,
+      viaCity: stopAirport,
+      viaRegion: airline.hubRegion || 'unknown',
       departureDate: formatDate(firstSeg?.departing_at),
       returnDate: null,
       departureTime: formatTime(firstSeg?.departing_at),
@@ -202,21 +205,20 @@ async function searchDuffel(origin, destination, departDate, returnDate, passeng
 }
 
 function generateRecommendation(flights, isMock) {
-  if (!flights.length) return 'No flights found for these criteria.';
+  if (!flights.length) return null;
   const best = flights[0];
   const tierA = flights.filter(f => f.tier === 'A');
   const directs = flights.filter(f => f.stops === 0);
-  const spread = flights[flights.length - 1].price - flights[0].price;
+  const spread = flights[flights.length - 1].pricePerPax - flights[0].pricePerPax;
   const falling = flights.filter(f => f.trend === 'down').length;
 
   let rec = `<strong>Best pick:</strong> ${best.carrierName}`;
   rec += ` departing ${best.departureDate}`;
-  if (best.returnDate) rec += ` · returning ${best.returnDate} (${best.stayDays} day stay)`;
+  if (best.returnDate) rec += ` · returning ${best.returnDate} (${best.stayDays}-day stay)`;
   rec += ` — <strong>A$${best.pricePerPax.toLocaleString()} per person</strong>`;
-  rec += best.stops === 0 ? ', direct flight.' : `, 1 stop via ${best.via}.`;
-
-  if (spread > 400) rec += ` Prices range A$${flights[0].pricePerPax.toLocaleString()}–A$${flights[flights.length-1].pricePerPax.toLocaleString()} — flexible dates save money.`;
-  if (falling > 2) rec += ` ${falling} airlines showing falling prices — good time to book.`;
+  rec += best.stops === 0 ? ', direct.' : `, 1 stop via ${best.viaCity || best.via}.`;
+  if (spread > 400) rec += ` Prices range A$${flights[0].pricePerPax.toLocaleString()}–A$${flights[flights.length-1].pricePerPax.toLocaleString()}.`;
+  if (falling > 2) rec += ` ${falling} airlines showing falling prices.`;
   if (directs.length && directs[0].id !== best.id) rec += ` Cheapest direct: ${directs[0].carrierName} A$${directs[0].pricePerPax.toLocaleString()}.`;
   if (tierA.length && tierA[0].id !== best.id) rec += ` Best premium: ${tierA[0].carrierName} A$${tierA[0].pricePerPax.toLocaleString()}.`;
   if (isMock) rec += ` <span style="opacity:.55;font-size:12px">(Demo data)</span>`;
@@ -237,6 +239,7 @@ export default async function handler(req, res) {
     passengers = 1,
     cabin = 'economy',
     maxStops = 'any',
+    constraints = {},
   } = req.body;
 
   if (!destination || !departDate) {
@@ -272,14 +275,93 @@ export default async function handler(req, res) {
       });
     }
 
+    // Apply stops filter
     if (maxStops !== 'any') {
       flights = flights.filter(f => f.stops <= parseInt(maxStops));
     }
 
-    flights = flights.sort((a, b) => a.price - b.price).slice(0, 15).map((f, i) => ({ ...f, rank: i + 1 }));
-    const recommendation = generateRecommendation(flights, MOCK_MODE);
+    // Apply constraint filters and build warning messages
+    const warnings = [];
+    let filteredFlights = [...flights];
 
-    return res.status(200).json({ flights, recommendation, isMock: MOCK_MODE });
+    // Stopover region/city constraint
+    if (constraints.stopoverRegion) {
+      const region = constraints.stopoverRegion.toLowerCase();
+      const matching = flights.filter(f =>
+        f.stops === 0 || (f.viaRegion && f.viaRegion.toLowerCase().includes(region)) ||
+        (f.viaCity && f.viaCity.toLowerCase().includes(region))
+      );
+      if (matching.length === 0) {
+        warnings.push(`No flights found with stopovers in ${constraints.stopoverRegion}. Showing all available options instead.`);
+      } else {
+        filteredFlights = matching;
+        if (matching.length < flights.length) {
+          warnings.push(`Showing only flights with stopovers in ${constraints.stopoverRegion} (${matching.length} of ${flights.length} options). Remove this filter to see more.`);
+        }
+      }
+    }
+
+    // Specific airline constraint
+    if (constraints.airlines && constraints.airlines.length > 0) {
+      const requestedAirlines = constraints.airlines.map(a => a.toLowerCase());
+      const matching = filteredFlights.filter(f =>
+        requestedAirlines.some(a => f.carrierName.toLowerCase().includes(a) || f.carrierCode.toLowerCase() === a)
+      );
+      if (matching.length === 0) {
+        warnings.push(`No flights found for ${constraints.airlines.join(', ')}. Showing all available airlines instead.`);
+      } else {
+        filteredFlights = matching;
+      }
+    }
+
+    // Max duration constraint
+    if (constraints.maxDurationHours) {
+      const maxMins = constraints.maxDurationHours * 60;
+      const matching = filteredFlights.filter(f => f.durationMins <= maxMins);
+      if (matching.length === 0) {
+        warnings.push(`No flights found under ${constraints.maxDurationHours} hours. Showing shortest available options instead.`);
+        filteredFlights = filteredFlights.sort((a, b) => a.durationMins - b.durationMins).slice(0, 8);
+      } else {
+        filteredFlights = matching;
+      }
+    }
+
+    // Departure time constraint
+    if (constraints.departureWindow) {
+      const windows = {
+        morning: { start: 6, end: 12 },
+        afternoon: { start: 12, end: 18 },
+        evening: { start: 18, end: 24 },
+        night: { start: 0, end: 6 },
+      };
+      const window = windows[constraints.departureWindow.toLowerCase()];
+      if (window) {
+        const matching = filteredFlights.filter(f => {
+          const hour = parseInt(f.departureTime.split(':')[0]);
+          return hour >= window.start && hour < window.end;
+        });
+        if (matching.length === 0) {
+          warnings.push(`No ${constraints.departureWindow} departures found. Showing all departure times instead.`);
+        } else {
+          filteredFlights = matching;
+        }
+      }
+    }
+
+    filteredFlights = filteredFlights
+      .sort((a, b) => a.price - b.price)
+      .slice(0, 15)
+      .map((f, i) => ({ ...f, rank: i + 1 }));
+
+    const recommendation = generateRecommendation(filteredFlights, MOCK_MODE);
+
+    return res.status(200).json({
+      flights: filteredFlights,
+      recommendation,
+      warnings,
+      isMock: MOCK_MODE,
+      totalFound: flights.length,
+    });
 
   } catch (err) {
     console.error('Search error:', err);

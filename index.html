@@ -92,6 +92,7 @@
     /* RESULTS */
     .results { margin-top: 1.5rem; }
     .ai-banner { background: var(--accent-bg); border: 1px solid rgba(26,107,74,.18); border-radius: var(--radius-sm); padding: .9rem 1.1rem; font-size: 13px; color: var(--accent-text); line-height: 1.65; margin-bottom: 1rem; }
+    .warning-banner { background: var(--warn-bg); border: 1px solid rgba(146,83,10,.2); border-radius: var(--radius-sm); padding: .85rem 1.1rem; font-size: 13px; color: var(--warn-text); line-height: 1.6; margin-bottom: .75rem; }
     .results-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
     .results-title { font-size: 13px; font-weight: 500; color: var(--text-2); }
     .results-controls { display: flex; gap: 8px; align-items: center; }
@@ -320,7 +321,8 @@ function renderResults(data, params) {
   if (!allFlights.length) { div.innerHTML = `<div class="no-results">No flights found. Try adjusting your filters or dates.</div>`; return; }
   const route = `${params.origin || 'SYD'} → ${params.destination}`;
   div.innerHTML = `
-    <div class="ai-banner">${data.recommendation}</div>
+    ${data.recommendation ? `<div class="ai-banner">${data.recommendation}</div>` : ''}
+    ${data.warnings && data.warnings.length > 0 ? data.warnings.map(w => `<div class="warning-banner">${w}</div>`).join('') : ''}
     <div class="results-bar">
       <div class="results-title">${allFlights.length} options · ${route}${data.isMock ? '' : ' · Live prices'}</div>
       <div class="results-controls">
