@@ -1,6 +1,6 @@
 // api/search.js — Flight Search with Mock Data + Duffel Live toggle
 
-const MOCK_MODE = !process.env.DUFFEL_API_KEY || process.env.DUFFEL_API_KEY.includes('test');
+const MOCK_MODE = true;
 
 const AIRLINES = {
   'QR': { name: 'Qatar Airways', tier: 'A', hub: 'DOH' },
