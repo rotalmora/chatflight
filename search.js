@@ -128,10 +128,7 @@ function generateMockFlights(origin, destination, departDate, returnDate, stayDa
 
 // ─── LIVE DUFFEL ──────────────────────────────────────────────────────────────
 
-async function searchDuffel(origin, destination, departDate, returnDate, passengers, cabin) {
-  const slices = [{ origin, destination, departure_date: departDate }];
-  if (returnDate) slices.push({ origin: destination, destination: origin, departure_date: returnDate });
-
+async function fetchOffers(slices, passengers, cabin) {
   const response = await fetch('https://api.duffel.com/air/offer_requests?return_offers=true', {
     method: 'POST',
     headers: {
@@ -155,51 +152,94 @@ async function searchDuffel(origin, destination, departDate, returnDate, passeng
   }
 
   const data = await response.json();
+  return data.data?.offers || [];
+}
+
+function parseOffer(offer, pax, returnDate, stayDays) {
+  const slice = offer.slices[0];
+  const segments = slice?.segments || [];
+  const first = segments[0];
+  const last = segments[segments.length - 1];
+  const code = first?.marketing_carrier?.iata_code || '??';
+  const airline = AIRLINES[code] || {
+    name: first?.marketing_carrier?.name || code,
+    tier: 'B', hubCity: null, hubRegion: 'Unknown'
+  };
+  const stops = segments.length - 1;
+  const price = Math.round(parseFloat(offer.total_amount));
+  const dur = slice?.duration?.match(/PT(?:(\d+)H)?(?:(\d+)M)?/);
+  const durMins = dur ? (parseInt(dur[1] || 0) * 60 + parseInt(dur[2] || 0)) : 0;
+  const stopCity = stops > 0
+    ? (segments[0]?.destination?.city_name || segments[0]?.destination?.iata_code || airline.hubCity)
+    : null;
+
+  return {
+    id: offer.id,
+    carrierCode: code,
+    carrierName: airline.name,
+    tier: airline.tier,
+    stops,
+    stopoverCity: stopCity,
+    stopoverRegion: stops > 0 ? airline.hubRegion : null,
+    stopoverCode: stops > 0 ? segments[0]?.destination?.iata_code : null,
+    departureDate: new Date(first?.departing_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }),
+    returnDate: returnDate ? new Date(returnDate + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) : null,
+    stayDays: stayDays || null,
+    departureTime: new Date(first?.departing_at).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false }),
+    arrivalTime: new Date(last?.arriving_at).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false }),
+    duration: minsToHours(durMins),
+    durationMins: durMins,
+    price,
+    pricePerPax: Math.round(price / pax),
+    currency: offer.total_currency,
+    trend: 'stable',
+    trendNote: '— Live price',
+  };
+}
+
+async function searchDuffel(origin, destination, departDate, returnDate, passengers, cabin, stayDays) {
   const pax = parseInt(passengers) || 1;
 
-  return (data.data?.offers || []).map(offer => {
-    const slice = offer.slices[0];
-    const segments = slice?.segments || [];
-    const first = segments[0];
-    const last = segments[segments.length - 1];
-    const code = first?.marketing_carrier?.iata_code || '??';
-    const airline = AIRLINES[code] || {
-      name: first?.marketing_carrier?.name || code,
-      tier: 'B',
-      hubCity: null,
-      hubRegion: 'Unknown'
-    };
-    const stops = segments.length - 1;
-    const price = Math.round(parseFloat(offer.total_amount));
-    const dur = slice?.duration?.match(/PT(?:(\d+)H)?(?:(\d+)M)?/);
-    const durMins = dur ? (parseInt(dur[1] || 0) * 60 + parseInt(dur[2] || 0)) : 0;
-    const stopCity = stops > 0
-      ? (segments[0]?.destination?.city_name || segments[0]?.destination?.iata_code || airline.hubCity)
-      : null;
+  if (returnDate) {
+    // Fetch outbound and return as separate one-way requests then combine prices
+    const [outboundOffers, returnOffers] = await Promise.all([
+      fetchOffers([{ origin, destination, departure_date: departDate }], passengers, cabin),
+      fetchOffers([{ origin: destination, destination: origin, departure_date: returnDate }], passengers, cabin),
+    ]);
 
-    return {
-      id: offer.id,
-      carrierCode: code,
-      carrierName: airline.name,
-      tier: airline.tier,
-      stops,
-      stopoverCity: stopCity,
-      stopoverRegion: stops > 0 ? airline.hubRegion : null,
-      stopoverCode: stops > 0 ? segments[0]?.destination?.iata_code : null,
-      departureDate: new Date(first?.departing_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }),
-      returnDate: null,
-      stayDays: null,
-      departureTime: new Date(first?.departing_at).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false }),
-      arrivalTime: new Date(last?.arriving_at).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false }),
-      duration: minsToHours(durMins),
-      durationMins: durMins,
-      price,
-      pricePerPax: Math.round(price / pax),
-      currency: offer.total_currency,
-      trend: 'stable',
-      trendNote: '— Live price',
-    };
-  });
+    // Pair each outbound with cheapest matching return carrier
+    const returnByCarrier = {};
+    returnOffers.forEach(offer => {
+      const code = offer.slices[0]?.segments[0]?.marketing_carrier?.iata_code || '??';
+      if (!returnByCarrier[code] || parseFloat(offer.total_amount) < parseFloat(returnByCarrier[code].total_amount)) {
+        returnByCarrier[code] = offer;
+      }
+    });
+
+    // Get cheapest return overall as fallback
+    const cheapestReturn = returnOffers.sort((a, b) => parseFloat(a.total_amount) - parseFloat(b.total_amount))[0];
+
+    return outboundOffers.map(offer => {
+      const code = offer.slices[0]?.segments[0]?.marketing_carrier?.iata_code || '??';
+      const matchingReturn = returnByCarrier[code] || cheapestReturn;
+      const outboundPrice = parseFloat(offer.total_amount);
+      const returnPrice = matchingReturn ? parseFloat(matchingReturn.total_amount) : 0;
+      const combinedPrice = Math.round((outboundPrice + returnPrice) * pax);
+
+      const parsed = parseOffer(offer, pax, returnDate, stayDays);
+      return {
+        ...parsed,
+        price: combinedPrice,
+        pricePerPax: Math.round(combinedPrice / pax),
+        isReturn: true,
+      };
+    });
+
+  } else {
+    // One-way search
+    const offers = await fetchOffers([{ origin, destination, departure_date: departDate }], passengers, cabin);
+    return offers.map(offer => parseOffer(offer, pax, null, null));
+  }
 }
 
 // ─── HANDLER ──────────────────────────────────────────────────────────────────
@@ -233,7 +273,7 @@ export default async function handler(req, res) {
     } else {
       flights = await searchDuffel(
         origin, destination, departDate, returnDate,
-        passengers, cabin
+        passengers, cabin, stayDays
       );
 
       // Deduplicate by carrier + departure time + date
