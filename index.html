@@ -273,7 +273,7 @@ async function sendChat() {
 
   try {
     // Phase 1 — extract search params
-    const r1 = await fetch('/api/chat', {
+    const r1 = await fetch('/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages: chatHistory })
@@ -294,7 +294,7 @@ async function sendChat() {
       showLoading('Searching flights and analysing results...');
 
       // Phase 2 — fetch raw flights
-      const r2 = await fetch('/api/search', {
+      const r2 = await fetch('/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(d1.searchParams)
@@ -303,7 +303,7 @@ async function sendChat() {
       if (d2.error) throw new Error(d2.error);
 
       // Phase 3 — Claude analyses flights in isolation
-      const r3 = await fetch('/api/chat', {
+      const r3 = await fetch('/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -357,7 +357,7 @@ async function doFormSearch() {
   document.getElementById('searchBtn').disabled = true;
 
   try {
-    const r = await fetch('/api/search', {
+    const r = await fetch('/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ origin, destination, departDate, returnDate, flexDays, passengers, cabin })
