@@ -273,10 +273,10 @@ async function sendChat() {
 
   try {
     // Phase 1 — extract search params
-    const r1 = await fetch('/chat', {
+    const r1 = await fetch('/api', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: chatHistory })
+      body: JSON.stringify({ action: 'chat', messages: chatHistory })
     });
     const d1 = await r1.json();
     if (d1.error) throw new Error(d1.error);
@@ -294,23 +294,19 @@ async function sendChat() {
       showLoading('Searching flights and analysing results...');
 
       // Phase 2 — fetch raw flights
-      const r2 = await fetch('/search', {
+      const r2 = await fetch('/api', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(d1.searchParams)
+        body: JSON.stringify({ action: 'search', ...d1.searchParams })
       });
       const d2 = await r2.json();
       if (d2.error) throw new Error(d2.error);
 
       // Phase 3 — Claude analyses flights in isolation
-      const r3 = await fetch('/chat', {
+      const r3 = await fetch('/api', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: chatHistory,
-          pendingFlights: d2.flights,
-          originalRequest: text
-        })
+        body: JSON.stringify({ action: 'chat', messages: chatHistory, pendingFlights: d2.flights, originalRequest: text })
       });
       const d3 = await r3.json();
       if (d3.error) throw new Error(d3.error);
@@ -357,10 +353,10 @@ async function doFormSearch() {
   document.getElementById('searchBtn').disabled = true;
 
   try {
-    const r = await fetch('/search', {
+    const r = await fetch('/api', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ origin, destination, departDate, returnDate, flexDays, passengers, cabin })
+      body: JSON.stringify({ action: 'search', origin, destination, departDate, returnDate, flexDays, passengers, cabin })
     });
     const data = await r.json();
     if (data.error) throw new Error(data.error);
