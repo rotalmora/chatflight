@@ -291,7 +291,7 @@ async function sendChat() {
       if (d1.searchParams.departDate) document.getElementById('fDepart').value = d1.searchParams.departDate;
       if (d1.searchParams.returnDate) document.getElementById('fReturn').value = d1.searchParams.returnDate;
 
-      showLoading('Searching flights and analysing results...');
+      showLoading('Scanning flights across your travel window...');
 
       // Phase 2 — fetch raw flights
       const r2 = await fetch('/api', {
@@ -356,7 +356,7 @@ async function doFormSearch() {
     const r = await fetch('/api', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'search', origin, destination, departDate, returnDate, flexDays, passengers, cabin })
+      body: JSON.stringify({ action: 'search', origin, destination, windowStart: departDate, windowEnd: departDate, stayDays: returnDate ? Math.round((new Date(returnDate) - new Date(departDate)) / 86400000) : 14, passengers, cabin })
     });
     const data = await r.json();
     if (data.error) throw new Error(data.error);
@@ -392,7 +392,7 @@ function renderResults(data, params, originalRequest) {
     ${data.warning ? `<div class="warning-banner">⚠ ${data.warning}</div>` : ''}
     <div class="mock-banner">Demo data — results are simulated. Switch to live API for real flights.</div>
     <div class="results-bar">
-      <div class="results-title">${flights.length} options${route ? ' · ' + route : ''}</div>
+      <div class="results-title">${flights.length} combinations found${route ? ' · ' + route : ''}${data.datesScanned ? ` · ${data.datesScanned} dates scanned` : ''}</div>
       <select class="sort-sel" onchange="sortBy(this.value)">
         <option value="rank">AI recommended</option>
         <option value="price">Cheapest first</option>

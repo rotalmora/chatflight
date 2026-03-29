@@ -1,117 +1,68 @@
-// api.js — single handler for both /chat and /search actions
-// Action is passed in the request body as "action": "chat" or "action": "search"
+// api.js — Chatflight
+// Architecture: parallel date scanning → full pool → Claude picks best
 
 const MOCK_MODE = false;
 
 const AIRLINES = {
-  'QR': { name: 'Qatar Airways', tier: 'A', hub: 'DOH', hubCity: 'Doha', hubRegion: 'Middle East' },
-  'EK': { name: 'Emirates', tier: 'A', hub: 'DXB', hubCity: 'Dubai', hubRegion: 'Middle East' },
-  'SQ': { name: 'Singapore Airlines', tier: 'A', hub: 'SIN', hubCity: 'Singapore', hubRegion: 'Asia' },
-  'QF': { name: 'Qantas', tier: 'A', hub: 'SIN', hubCity: 'Singapore', hubRegion: 'Asia' },
-  'CX': { name: 'Cathay Pacific', tier: 'A', hub: 'HKG', hubCity: 'Hong Kong', hubRegion: 'Asia' },
-  'EY': { name: 'Etihad Airways', tier: 'A', hub: 'AUH', hubCity: 'Abu Dhabi', hubRegion: 'Middle East' },
-  'AA': { name: 'American Airlines', tier: 'B', hub: 'DFW', hubCity: 'Dallas', hubRegion: 'USA' },
-  'UA': { name: 'United Airlines', tier: 'B', hub: 'LAX', hubCity: 'Los Angeles', hubRegion: 'USA' },
-  'AC': { name: 'Air Canada', tier: 'B', hub: 'YVR', hubCity: 'Vancouver', hubRegion: 'Canada' },
-  'MH': { name: 'Malaysia Airlines', tier: 'B', hub: 'KUL', hubCity: 'Kuala Lumpur', hubRegion: 'Asia' },
-  'TK': { name: 'Turkish Airlines', tier: 'B', hub: 'IST', hubCity: 'Istanbul', hubRegion: 'Europe' },
-  'AI': { name: 'Air India', tier: 'B', hub: 'DEL', hubCity: 'Delhi', hubRegion: 'Asia' },
-  'KL': { name: 'KLM', tier: 'B', hub: 'AMS', hubCity: 'Amsterdam', hubRegion: 'Europe' },
-  'LH': { name: 'Lufthansa', tier: 'A', hub: 'FRA', hubCity: 'Frankfurt', hubRegion: 'Europe' },
-  'D7': { name: 'AirAsia X', tier: 'C', hub: 'KUL', hubCity: 'Kuala Lumpur', hubRegion: 'Asia' },
+  'QR': { name: 'Qatar Airways', tier: 'A', hubCity: 'Doha', hubRegion: 'Middle East' },
+  'EK': { name: 'Emirates', tier: 'A', hubCity: 'Dubai', hubRegion: 'Middle East' },
+  'SQ': { name: 'Singapore Airlines', tier: 'A', hubCity: 'Singapore', hubRegion: 'Asia' },
+  'QF': { name: 'Qantas', tier: 'A', hubCity: 'Singapore', hubRegion: 'Asia' },
+  'CX': { name: 'Cathay Pacific', tier: 'A', hubCity: 'Hong Kong', hubRegion: 'Asia' },
+  'EY': { name: 'Etihad Airways', tier: 'A', hubCity: 'Abu Dhabi', hubRegion: 'Middle East' },
+  'AA': { name: 'American Airlines', tier: 'B', hubCity: 'Dallas', hubRegion: 'USA' },
+  'UA': { name: 'United Airlines', tier: 'B', hubCity: 'Los Angeles', hubRegion: 'USA' },
+  'AC': { name: 'Air Canada', tier: 'B', hubCity: 'Vancouver', hubRegion: 'Canada' },
+  'MH': { name: 'Malaysia Airlines', tier: 'B', hubCity: 'Kuala Lumpur', hubRegion: 'Asia' },
+  'TK': { name: 'Turkish Airlines', tier: 'B', hubCity: 'Istanbul', hubRegion: 'Europe' },
+  'AI': { name: 'Air India', tier: 'B', hubCity: 'Delhi', hubRegion: 'Asia' },
+  'KL': { name: 'KLM', tier: 'B', hubCity: 'Amsterdam', hubRegion: 'Europe' },
+  'LH': { name: 'Lufthansa', tier: 'A', hubCity: 'Frankfurt', hubRegion: 'Europe' },
+  'MU': { name: 'China Eastern', tier: 'B', hubCity: 'Shanghai', hubRegion: 'Asia' },
+  'D7': { name: 'AirAsia X', tier: 'C', hubCity: 'Kuala Lumpur', hubRegion: 'Asia' },
 };
 
-const BASE_PRICES = {
-  'QR': 1289, 'EK': 1349, 'SQ': 1399, 'QF': 1459, 'CX': 1319,
-  'EY': 1279, 'AA': 1599, 'UA': 1549, 'AC': 1489, 'MH': 1099,
-  'TK': 1189, 'AI': 989, 'KL': 1229, 'LH': 1379, 'D7': 849
-};
+const FX = { USD: 1.55, EUR: 1.68, GBP: 1.97, AED: 0.42, SGD: 1.15, JPY: 0.0104, CAD: 1.12, NZD: 0.91 };
 
-// ─── MOCK DATA ────────────────────────────────────────────────────────────────
-
-function seedRand(seed) {
-  let s = seed;
-  return () => {
-    s = (s * 1664525 + 1013904223) & 0xffffffff;
-    return (s >>> 0) / 0xffffffff;
-  };
-}
-
-function addDays(dateStr, days) {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() + Math.round(days));
-  return d.toISOString().split('T')[0];
-}
-
-function formatDisplayDate(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
+function toAUD(amount, currency) {
+  if (currency === 'AUD') return Math.round(amount);
+  return Math.round(amount * (FX[currency] || 1));
 }
 
 function minsToHours(mins) {
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
-function generateMockFlights(origin, destination, departDate, returnDate, stayDays, flexDays, passengers, cabin) {
-  const seed = (origin + destination + departDate).split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-  const rand = seedRand(seed);
-  const cabinMult = { economy: 1, premium_economy: 1.8, business: 3.5, first: 5.5 }[cabin] || 1;
-  const pax = parseInt(passengers) || 1;
-  const flex = parseInt(flexDays) || 0;
-
-  let exactStayDays = parseInt(stayDays) || null;
-  if (!exactStayDays && returnDate && departDate) {
-    const dep = new Date(departDate + 'T00:00:00');
-    const ret = new Date(returnDate + 'T00:00:00');
-    exactStayDays = Math.round((ret - dep) / (1000 * 60 * 60 * 24));
-  }
-  if (!exactStayDays) exactStayDays = 14;
-
-  const flights = [];
-  Object.keys(AIRLINES).forEach((code) => {
-    const airline = AIRLINES[code];
-    const variants = flex > 0 ? 2 : 1;
-    for (let v = 0; v < variants; v++) {
-      const depOffset = flex > 0 ? Math.floor(rand() * (flex * 2 + 1)) - flex : 0;
-      const actualDepart = depOffset !== 0 ? addDays(departDate, depOffset) : departDate;
-      const actualReturn = addDays(actualDepart, exactStayDays);
-      const base = BASE_PRICES[code] || 1200;
-      const variance = Math.round((rand() - 0.5) * 250);
-      const price = Math.round((base + variance) * cabinMult * pax);
-      const forceStop = ['AA', 'UA', 'AC', 'D7'].includes(code);
-      const stops = forceStop ? 1 : (rand() > 0.7 ? 0 : 1);
-      const durationMins = stops === 0 ? Math.round(1380 + rand() * 120) : Math.round(1560 + rand() * 300);
-      const depHour = 6 + Math.floor(rand() * 16);
-      const depMin = Math.floor(rand() * 4) * 15;
-      const totalMins = depHour * 60 + depMin + durationMins;
-      const arrHour = Math.floor((totalMins % (24 * 60)) / 60);
-      const arrMin = totalMins % 60;
-      const nextDay = totalMins >= 24 * 60;
-      const trendRoll = rand();
-      const trend = trendRoll > 0.6 ? 'down' : trendRoll > 0.3 ? 'stable' : 'up';
-      flights.push({
-        id: `mock_${code}_${v}_${actualDepart}`,
-        carrierCode: code, carrierName: airline.name, tier: airline.tier,
-        stops, stopoverCity: stops > 0 ? airline.hubCity : null,
-        stopoverRegion: stops > 0 ? airline.hubRegion : null,
-        stopoverCode: stops > 0 ? airline.hub : null,
-        departureDate: formatDisplayDate(actualDepart),
-        returnDate: formatDisplayDate(actualReturn),
-        stayDays: exactStayDays,
-        departureTime: `${String(depHour).padStart(2,'0')}:${String(depMin).padStart(2,'0')}`,
-        arrivalTime: `${String(arrHour).padStart(2,'0')}:${String(arrMin).padStart(2,'0')}${nextDay ? ' +1' : ''}`,
-        duration: minsToHours(durationMins), durationMins, price,
-        pricePerPax: Math.round(price / pax), currency: 'AUD',
-        trend, trendNote: trend === 'down' ? '↓ Falling' : trend === 'up' ? '↑ Rising' : '— Stable',
-      });
-    }
-  });
-  return flights.sort((a, b) => a.price - b.price);
+function addDays(dateStr, days) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
 }
 
-// ─── LIVE DUFFEL ──────────────────────────────────────────────────────────────
+function displayDate(isoStr) {
+  return new Date(isoStr).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
+}
 
-async function fetchDuffelOffers(slices, passengers, cabin) {
+function displayTime(isoStr) {
+  return new Date(isoStr).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+// Generate dates across a window every N days
+function generateDateGrid(windowStart, windowEnd, stepDays = 3) {
+  const dates = [];
+  let current = windowStart;
+  while (current <= windowEnd) {
+    dates.push(current);
+    current = addDays(current, stepDays);
+  }
+  // Always include the last date if not already there
+  if (dates[dates.length - 1] !== windowEnd) dates.push(windowEnd);
+  return dates;
+}
+
+// ─── DUFFEL ───────────────────────────────────────────────────────────────────
+
+async function duffelSearch(origin, destination, departDate, passengers, cabin) {
   const response = await fetch('https://api.duffel.com/air/offer_requests?return_offers=true', {
     method: 'POST',
     headers: {
@@ -122,81 +73,242 @@ async function fetchDuffelOffers(slices, passengers, cabin) {
     },
     body: JSON.stringify({
       data: {
-        slices,
+        slices: [{ origin, destination, departure_date: departDate }],
         passengers: Array(parseInt(passengers)).fill({ type: 'adult' }),
         cabin_class: cabin || 'economy',
       }
     })
   });
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Duffel error: ${response.status} — ${err}`);
-  }
+
+  if (!response.ok) return []; // silently skip failed dates
   const data = await response.json();
   return data.data?.offers || [];
 }
 
-function parseOffer(offer, pax, returnDate, stayDays) {
+function parseOffer(offer, pax) {
   const slice = offer.slices[0];
-  const segments = slice?.segments || [];
-  const first = segments[0];
-  const last = segments[segments.length - 1];
+  const segs = slice?.segments || [];
+  const first = segs[0];
+  const last = segs[segs.length - 1];
   const code = first?.marketing_carrier?.iata_code || '??';
   const airline = AIRLINES[code] || { name: first?.marketing_carrier?.name || code, tier: 'B', hubCity: null, hubRegion: 'Unknown' };
-  const stops = segments.length - 1;
-  const rawPrice = parseFloat(offer.total_amount);
-  const currency = offer.total_currency;
-  // Convert to AUD if needed
-  const fxRates = { USD: 1.55, EUR: 1.68, GBP: 1.97, AED: 0.42, SGD: 1.15, JPY: 0.0104, CAD: 1.12, NZD: 0.91 };
-  const price = currency === 'AUD' ? Math.round(rawPrice) : Math.round(rawPrice * (fxRates[currency] || 1));
+  const stops = segs.length - 1;
+  const rawAmount = parseFloat(offer.total_amount);
+  const priceAUD = toAUD(rawAmount, offer.total_currency);
   const dur = slice?.duration?.match(/PT(?:(\d+)H)?(?:(\d+)M)?/);
-  const durMins = dur ? (parseInt(dur[1] || 0) * 60 + parseInt(dur[2] || 0)) : 0;
-  const stopCity = stops > 0 ? (segments[0]?.destination?.city_name || segments[0]?.destination?.iata_code || airline.hubCity) : null;
+  const durMins = dur ? parseInt(dur[1] || 0) * 60 + parseInt(dur[2] || 0) : 0;
+  const stopCity = stops > 0 ? (segs[0]?.destination?.city_name || segs[0]?.destination?.iata_code || airline.hubCity) : null;
+
   return {
     id: offer.id,
-    carrierCode: code, carrierName: airline.name, tier: airline.tier,
-    stops, stopoverCity: stopCity,
+    carrierCode: code,
+    carrierName: airline.name,
+    tier: airline.tier,
+    stops,
+    stopoverCity: stopCity,
     stopoverRegion: stops > 0 ? airline.hubRegion : null,
-    stopoverCode: stops > 0 ? segments[0]?.destination?.iata_code : null,
-    departureDate: new Date(first?.departing_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }),
-    returnDate: returnDate ? new Date(returnDate + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) : null,
-    stayDays: stayDays || null,
-    departureTime: new Date(first?.departing_at).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false }),
-    arrivalTime: new Date(last?.arriving_at).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false }),
-    duration: minsToHours(durMins), durationMins: durMins,
-    price, pricePerPax: Math.round(price / pax),
-    currency: 'AUD', originalCurrency: currency, originalPrice: rawPrice,
-    trend: 'stable', trendNote: '— Live price',
+    stopoverCode: stops > 0 ? segs[0]?.destination?.iata_code : null,
+    departureDate: displayDate(first?.departing_at),
+    departureDateRaw: first?.departing_at?.split('T')[0],
+    arrivalDate: displayDate(last?.arriving_at),
+    departureTime: displayTime(first?.departing_at),
+    arrivalTime: displayTime(last?.arriving_at),
+    duration: minsToHours(durMins),
+    durationMins: durMins,
+    priceAUD,
+    pax: parseInt(pax),
   };
 }
 
-async function searchDuffel(origin, destination, departDate, returnDate, passengers, cabin, stayDays) {
+// ─── MOCK DATA ────────────────────────────────────────────────────────────────
+
+function generateMockFlights(origin, destination, windowStart, windowEnd, stayDays, passengers, cabin) {
+  const BASE = { 'QR':1289,'EK':1349,'SQ':1399,'QF':1459,'CX':1319,'EY':1279,'AA':1599,'UA':1549,'AC':1489,'MH':1099,'TK':1189,'AI':989,'KL':1229,'LH':1379,'MU':999,'D7':849 };
+  const cabinMult = { economy:1, premium_economy:1.8, business:3.5, first:5.5 }[cabin] || 1;
   const pax = parseInt(passengers) || 1;
-  if (returnDate) {
-    const [outboundOffers, returnOffers] = await Promise.all([
-      fetchDuffelOffers([{ origin, destination, departure_date: departDate }], passengers, cabin),
-      fetchDuffelOffers([{ origin: destination, destination: origin, departure_date: returnDate }], passengers, cabin),
-    ]);
-    const returnByCarrier = {};
-    returnOffers.forEach(offer => {
-      const code = offer.slices[0]?.segments[0]?.marketing_carrier?.iata_code || '??';
-      if (!returnByCarrier[code] || parseFloat(offer.total_amount) < parseFloat(returnByCarrier[code].total_amount)) {
-        returnByCarrier[code] = offer;
+  const outbound = [];
+  const inbound = [];
+
+  let seed = (origin + destination).split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  const rand = () => { seed = (seed * 1664525 + 1013904223) & 0xffffffff; return (seed >>> 0) / 0xffffffff; };
+
+  const dates = generateDateGrid(windowStart, windowEnd, 3);
+
+  dates.forEach(depDate => {
+    Object.keys(AIRLINES).forEach(code => {
+      const base = BASE[code] || 1200;
+      const variance = Math.round((rand() - 0.5) * 200);
+      const price = Math.round((base + variance) * cabinMult);
+      const stops = ['AA','UA','AC','D7'].includes(code) ? 1 : (rand() > 0.7 ? 0 : 1);
+      const durMins = stops === 0 ? Math.round(1380 + rand() * 120) : Math.round(1560 + rand() * 240);
+      const depHour = 6 + Math.floor(rand() * 16);
+      const depMin = Math.floor(rand() * 4) * 15;
+      const airline = AIRLINES[code];
+
+      outbound.push({
+        id: `mock_out_${code}_${depDate}`,
+        carrierCode: code, carrierName: airline.name, tier: airline.tier,
+        stops, stopoverCity: stops > 0 ? airline.hubCity : null,
+        stopoverRegion: stops > 0 ? airline.hubRegion : null,
+        stopoverCode: null,
+        departureDate: new Date(depDate + 'T00:00:00').toLocaleDateString('en-AU', { weekday:'short', day:'numeric', month:'short' }),
+        departureDateRaw: depDate,
+        arrivalDate: null,
+        departureTime: `${String(depHour).padStart(2,'0')}:${String(depMin).padStart(2,'0')}`,
+        arrivalTime: `${String((depHour + Math.floor(durMins/60)) % 24).padStart(2,'0')}:${String(depMin).padStart(2,'0')}`,
+        duration: minsToHours(durMins), durationMins: durMins,
+        priceAUD: price, pax,
+      });
+
+      // Return leg
+      const retDate = addDays(depDate, stayDays);
+      if (retDate <= addDays(windowEnd, stayDays)) {
+        const retPrice = Math.round((base + Math.round((rand() - 0.5) * 200)) * cabinMult);
+        inbound.push({
+          id: `mock_in_${code}_${retDate}`,
+          carrierCode: code, carrierName: airline.name, tier: airline.tier,
+          stops, stopoverCity: stops > 0 ? airline.hubCity : null,
+          stopoverRegion: stops > 0 ? airline.hubRegion : null,
+          stopoverCode: null,
+          departureDate: new Date(retDate + 'T00:00:00').toLocaleDateString('en-AU', { weekday:'short', day:'numeric', month:'short' }),
+          departureDateRaw: retDate,
+          arrivalDate: null,
+          departureTime: `${String(depHour).padStart(2,'0')}:${String(depMin).padStart(2,'0')}`,
+          arrivalTime: `${String((depHour + Math.floor(durMins/60)) % 24).padStart(2,'0')}:${String(depMin).padStart(2,'0')}`,
+          duration: minsToHours(durMins), durationMins: durMins,
+          priceAUD: retPrice, pax,
+        });
       }
     });
-    const cheapestReturn = [...returnOffers].sort((a, b) => parseFloat(a.total_amount) - parseFloat(b.total_amount))[0];
-    return outboundOffers.map(offer => {
-      const code = offer.slices[0]?.segments[0]?.marketing_carrier?.iata_code || '??';
-      const matchingReturn = returnByCarrier[code] || cheapestReturn;
-      const parsed = parseOffer(offer, 1, returnDate, stayDays);
-      const returnParsed = matchingReturn ? parseOffer(matchingReturn, 1, null, null) : null;
-      const combinedPrice = returnParsed ? parsed.price + returnParsed.price : parsed.price;
-      return { ...parsed, price: Math.round(combinedPrice * pax), pricePerPax: combinedPrice, isReturn: true };
+  });
+
+  return { outbound, inbound };
+}
+
+// ─── COMBINE OUTBOUND + INBOUND ───────────────────────────────────────────────
+
+function buildCombinations(outbound, inbound, stayDays, maxResults = 20) {
+  // Group inbound by carrier for fast lookup
+  const inboundByCarrier = {};
+  inbound.forEach(f => {
+    if (!inboundByCarrier[f.carrierCode]) inboundByCarrier[f.carrierCode] = [];
+    inboundByCarrier[f.carrierCode].push(f);
+  });
+
+  const combos = [];
+
+  outbound.forEach(out => {
+    const expectedReturnDate = addDays(out.departureDateRaw, stayDays);
+    
+    // Find best matching return — same carrier first, then any carrier
+    const sameCarrierReturns = (inboundByCarrier[out.carrierCode] || [])
+      .filter(r => r.departureDateRaw === expectedReturnDate);
+    const anyReturns = inbound
+      .filter(r => r.departureDateRaw === expectedReturnDate);
+    
+    const candidates = sameCarrierReturns.length > 0 ? sameCarrierReturns : anyReturns;
+    if (candidates.length === 0) return;
+
+    // Pick cheapest return for this outbound
+    const bestReturn = candidates.sort((a, b) => a.priceAUD - b.priceAUD)[0];
+    const totalAUD = out.priceAUD + bestReturn.priceAUD;
+
+    combos.push({
+      id: `combo_${out.id}_${bestReturn.id}`,
+      carrierCode: out.carrierCode,
+      carrierName: out.carrierName,
+      tier: out.tier,
+      stops: out.stops,
+      stopoverCity: out.stopoverCity,
+      stopoverRegion: out.stopoverRegion,
+      stopoverCode: out.stopoverCode,
+      departureDate: out.departureDate,
+      departureDateRaw: out.departureDateRaw,
+      returnDate: bestReturn.departureDate,
+      returnDateRaw: bestReturn.departureDateRaw,
+      stayDays,
+      departureTime: out.departureTime,
+      arrivalTime: out.arrivalTime,
+      returnDepartureTime: bestReturn.departureTime,
+      duration: out.duration,
+      durationMins: out.durationMins,
+      returnCarrier: bestReturn.carrierName !== out.carrierName ? bestReturn.carrierName : null,
+      price: totalAUD * out.pax,
+      pricePerPax: totalAUD,
+      currency: 'AUD',
+      trend: 'stable',
+      trendNote: '— Live price',
     });
-  } else {
-    const offers = await fetchDuffelOffers([{ origin, destination, departure_date: departDate }], passengers, cabin);
-    return offers.map(offer => parseOffer(offer, pax, null, null));
+  });
+
+  // Deduplicate — keep cheapest per carrier+date combo
+  const seen = new Set();
+  const deduped = [];
+  combos.sort((a, b) => a.pricePerPax - b.pricePerPax).forEach(c => {
+    const key = `${c.carrierCode}_${c.departureDateRaw}`;
+    if (!seen.has(key)) { seen.add(key); deduped.push(c); }
+  });
+
+  return deduped.slice(0, maxResults);
+}
+
+// ─── SEARCH HANDLER ───────────────────────────────────────────────────────────
+
+async function handleSearch(body) {
+  const {
+    origin = 'SYD', destination,
+    windowStart, windowEnd, stayDays = 14,
+    passengers = 1, cabin = 'economy',
+  } = body;
+
+  if (!destination || !windowStart) throw new Error('Destination and travel window required.');
+
+  const end = windowEnd || addDays(windowStart, 30);
+  const stay = parseInt(stayDays);
+  const pax = parseInt(passengers);
+
+  if (MOCK_MODE) {
+    const { outbound, inbound } = generateMockFlights(origin, destination, windowStart, end, stay, passengers, cabin);
+    const flights = buildCombinations(outbound, inbound, stay);
+    return { flights, isMock: true, datesScanned: generateDateGrid(windowStart, end).length };
   }
+
+  // Live Duffel — scan outbound dates across window
+  const outboundDates = generateDateGrid(windowStart, end, 3);
+  
+  // For each outbound date, the return date is outbound + stayDays
+  const inboundDates = [...new Set(outboundDates.map(d => addDays(d, stay)))];
+
+  console.log(`Scanning ${outboundDates.length} outbound dates + ${inboundDates.length} return dates`);
+
+  // Parallel search — all outbound dates simultaneously
+  const [outboundResults, inboundResults] = await Promise.all([
+    Promise.all(outboundDates.map(date =>
+      duffelSearch(origin, destination, date, passengers, cabin)
+        .then(offers => offers.map(o => parseOffer(o, pax)))
+        .catch(() => [])
+    )),
+    Promise.all(inboundDates.map(date =>
+      duffelSearch(destination, origin, date, passengers, cabin)
+        .then(offers => offers.map(o => parseOffer(o, pax)))
+        .catch(() => [])
+    )),
+  ]);
+
+  const outbound = outboundResults.flat();
+  const inbound = inboundResults.flat();
+
+  console.log(`Found ${outbound.length} outbound + ${inbound.length} inbound offers`);
+
+  const flights = buildCombinations(outbound, inbound, stay);
+
+  return {
+    flights,
+    isMock: false,
+    datesScanned: outboundDates.length,
+    outboundFound: outbound.length,
+    inboundFound: inbound.length,
+  };
 }
 
 // ─── CHAT HANDLER ─────────────────────────────────────────────────────────────
@@ -205,60 +317,72 @@ async function handleChat(body) {
   const { messages, pendingFlights, originalRequest } = body;
   const today = new Date().toISOString().split('T')[0];
 
+  // Phase 3: Analyse raw flight pool
   if (pendingFlights && originalRequest) {
-    const flightList = pendingFlights.map((f, i) =>
-      `[${i}] ID:${f.id} | ${f.carrierName} (${f.carrierCode}) | Tier:${f.tier} | ${f.stops === 0 ? 'Direct' : `Stop in ${f.stopoverCity}, ${f.stopoverRegion}`} | Departs:${f.departureDate} ${f.departureTime} | Returns:${f.returnDate || 'N/A'} | Stay:${f.stayDays || 'N/A'}d | Duration:${f.duration} | A$${f.pricePerPax}/person | Trend:${f.trendNote}`
+    const flightList = pendingFlights.slice(0, 30).map((f, i) =>
+      `[${i+1}] ${f.carrierName} (Tier ${f.tier}) | Departs ${f.departureDate} ${f.departureTime} | Returns ${f.returnDate} | ${f.stops === 0 ? 'Direct' : `1 stop via ${f.stopoverCity} (${f.stopoverRegion})`} | Flight time: ${f.duration} | A$${f.pricePerPax}/person`
     ).join('\n');
 
-    const prompt = `A user searched for flights with this request: "${originalRequest}"
+    const prompt = `User request: "${originalRequest}"
 
-Available flights:
+Available return flight combinations found (outbound + return leg combined):
 ${flightList}
 
-Instructions:
-1. Read the user's request carefully — note every requirement
-2. Filter to flights that match. If user said "stop in the US", only include US stopover flights
-3. If NO flights match a specific requirement, clearly explain and show best alternatives
-4. Rank matching flights best to worst value
-5. Write a friendly 2-3 sentence summary and top recommendation
+Your job:
+1. Read the user's request carefully — note every preference (stopover region, airline, budget, departure time, tier)
+2. Filter to flights matching those preferences
+3. If nothing matches a preference, say so honestly and show best alternatives
+4. Pick your top 3-5 recommendations and explain why
+5. Highlight the single best pick clearly
 
-Respond in this exact JSON format with no text before or after:
+Respond in JSON only, no text before or after:
 {
-  "message": "Your 2-3 sentence friendly summary and recommendation",
-  "warning": "Brief explanation if any requirement could not be matched, empty string if all matched",
-  "rankedIds": ["ID_OF_BEST_FLIGHT", "ID_OF_SECOND_BEST"]
-}`;
+  "message": "2-3 sentence conversational summary with clear top recommendation",
+  "warning": "If any preference couldn't be matched, explain briefly. Empty string if all matched.",
+  "rankedIds": ["combo_id_1", "combo_id_2", "combo_id_3"]
+}
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1024, messages: [{ role: 'user', content: prompt }] })
-    });
-    if (!response.ok) throw new Error(`Anthropic error: ${response.status}`);
-    const data = await response.json();
-    const text = data.content[0].text.trim();
+rankedIds = flight id values from the list, best first, up to 12.`;
 
-    let analysis = null;
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) { try { analysis = JSON.parse(jsonMatch[0]); } catch (e) {} }
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1024, messages: [{ role: 'user', content: prompt }] })
+      });
+      if (!response.ok) throw new Error(`Anthropic error: ${response.status}`);
+      const data = await response.json();
+      const text = data.content[0].text.trim();
 
-    let rankedFlights = [...pendingFlights];
-    if (analysis?.rankedIds?.length > 0) {
-      const ordered = [];
-      analysis.rankedIds.forEach(id => { const f = pendingFlights.find(f => f.id === id); if (f) ordered.push(f); });
-      pendingFlights.forEach(f => { if (!ordered.find(o => o.id === f.id)) ordered.push(f); });
-      rankedFlights = ordered;
+      let analysis = null;
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) { try { analysis = JSON.parse(jsonMatch[0]); } catch (e) {} }
+
+      let rankedFlights = [...pendingFlights];
+      if (analysis?.rankedIds?.length > 0) {
+        const ordered = [];
+        analysis.rankedIds.forEach(id => { const f = pendingFlights.find(f => f.id === id); if (f) ordered.push(f); });
+        pendingFlights.forEach(f => { if (!ordered.find(o => o.id === f.id)) ordered.push(f); });
+        rankedFlights = ordered;
+      }
+
+      return {
+        reply: analysis?.message || 'Here are the best combinations found.',
+        warning: analysis?.warning || '',
+        rankedFlights: rankedFlights.slice(0, 12).map((f, i) => ({ ...f, rank: i + 1 })),
+      };
+    } catch (err) {
+      return {
+        reply: 'Here are the best flights found for your search.',
+        warning: '',
+        rankedFlights: pendingFlights.slice(0, 12).map((f, i) => ({ ...f, rank: i + 1 })),
+      };
     }
-
-    return {
-      reply: analysis?.message || 'Here are the best flights matching your request.',
-      warning: analysis?.warning || '',
-      rankedFlights: rankedFlights.slice(0, 12).map((f, i) => ({ ...f, rank: i + 1 })),
-    };
   }
 
-  const systemPrompt = `You are an expert flight search assistant for Chatflight, helping Australians find the best value flights.
-Today's date is ${today}. Default origin is Sydney (SYD) unless stated otherwise.
+  // Phase 1: Extract intent from user message
+  const systemPrompt = `You are a flight search assistant for Chatflight, helping Australians find the cheapest flights.
+Today: ${today}. Default origin: Sydney (SYD).
 
 AIRPORT CODES:
 Sydney=SYD, Melbourne=MEL, Brisbane=BNE, Perth=PER, Adelaide=ADL
@@ -268,16 +392,26 @@ Tokyo=NRT, Singapore=SIN, Bangkok=BKK, Bali=DPS, Hong Kong=HKG, KL=KUL
 New York=JFK, Los Angeles=LAX, San Francisco=SFO
 Toronto=YYZ, Vancouver=YVR, Montreal=YUL, Calgary=YYC
 
-DATE RULES:
-- "in June" → departDate: 2026-06-01, flexDays: 0
-- "anytime in June" → departDate: 2026-06-01, flexDays: 14
-- "flexible" or "cheapest dates" → flexDays: 7
-- Exact dates or no flexibility mentioned → flexDays: 0
+WINDOW RULES — extract a date range to scan, not a single date:
+- "in May" → windowStart: 2026-05-01, windowEnd: 2026-05-31
+- "in June" → windowStart: 2026-06-01, windowEnd: 2026-06-30
+- "next month" → first to last day of next month
+- "over the next 2 months" → today to today+60
+- "around May 10" → windowStart: 2026-05-07, windowEnd: 2026-05-14
+- "1st of May" or exact date → windowStart = windowEnd = that date
+- "anytime" or no date → windowStart: today+7, windowEnd: today+60
 
-STAY RULES: "1 week"→7, "2 weeks"→14, "1 month"→30. returnDate = departDate + stayDays exactly.
+STAY DURATION — always set stayDays:
+- "1 week" → stayDays: 7
+- "2 weeks" → stayDays: 14  
+- "3 weeks" → stayDays: 21
+- "1 month" → stayDays: 30
+- No stay mentioned → stayDays: 14
 
-Be friendly and concise. When ready to search end your message with:
-SEARCH_PARAMS:{"origin":"SYD","destination":"AUH","departDate":"2026-05-01","returnDate":"2026-05-31","stayDays":30,"flexDays":0,"passengers":1,"cabin":"economy"}`;
+Be friendly, 1 sentence max. Only ask if destination is completely missing.
+
+When ready, end message with:
+SEARCH_PARAMS:{"origin":"SYD","destination":"AUH","windowStart":"2026-05-01","windowEnd":"2026-05-31","stayDays":21,"passengers":1,"cabin":"economy"}`;
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -292,42 +426,18 @@ SEARCH_PARAMS:{"origin":"SYD","destination":"AUH","departDate":"2026-05-01","ret
   let reply = fullReply;
   const match = fullReply.match(/SEARCH_PARAMS:(\{[^}]+\})/);
   if (match) {
-    try { searchParams = JSON.parse(match[1]); reply = fullReply.replace(/SEARCH_PARAMS:\{[^}]+\}/, '').trim() || 'Searching now...'; }
-    catch (e) {}
+    try {
+      searchParams = JSON.parse(match[1]);
+      reply = fullReply.replace(/SEARCH_PARAMS:\{[^}]+\}/, '').trim() || 'Scanning flights across your travel window...';
+    } catch (e) {}
   }
   return { reply, searchParams };
-}
-
-// ─── SEARCH HANDLER ───────────────────────────────────────────────────────────
-
-async function handleSearch(body) {
-  const { origin = 'SYD', destination, departDate, returnDate, stayDays, flexDays = 0, passengers = 1, cabin = 'economy' } = body;
-  if (!destination || !departDate) throw new Error('Destination and departure date are required.');
-
-  let flights = [];
-  if (MOCK_MODE) {
-    flights = generateMockFlights(origin, destination, departDate, returnDate, stayDays, flexDays, passengers, cabin);
-  } else {
-    flights = await searchDuffel(origin, destination, departDate, returnDate, passengers, cabin, stayDays);
-    const seen = new Set();
-    flights = flights.filter(f => {
-      const key = `${f.carrierCode}-${f.departureTime}-${f.departureDate}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }
-  return { flights, isMock: MOCK_MODE };
 }
 
 // ─── MAIN HANDLER ─────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   const { action, ...body } = req.body;
 
@@ -339,10 +449,10 @@ export default async function handler(req, res) {
       const result = await handleChat(body);
       return res.status(200).json(result);
     } else {
-      return res.status(400).json({ error: 'Invalid action. Use "chat" or "search".' });
+      return res.status(400).json({ error: 'Invalid action.' });
     }
   } catch (err) {
-    console.error(`Error handling action ${action}:`, err);
+    console.error(`Error [${action}]:`, err);
     return res.status(500).json({ error: err.message });
   }
 }
