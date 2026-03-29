@@ -306,7 +306,7 @@ async function sendChat() {
       const r3 = await fetch('/api', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'chat', messages: chatHistory, pendingFlights: d2.flights, originalRequest: text })
+        body: JSON.stringify({ action: 'chat', messages: chatHistory, pendingData: d2, originalRequest: text })
       });
       const d3 = await r3.json();
       if (d3.error) throw new Error(d3.error);
@@ -316,7 +316,7 @@ async function sendChat() {
       chatHistory.push({ role: 'assistant', content: d3.reply });
 
       // Always update the results table
-      allFlights = d3.rankedFlights || d2.flights.slice(0, 12).map((f, i) => ({ ...f, rank: i + 1 }));
+      allFlights = [...(d3.matched || []), ...(d3.others || [])];
       renderResults(d3, d1.searchParams, text);
 
     } else {
@@ -360,8 +360,8 @@ async function doFormSearch() {
     });
     const data = await r.json();
     if (data.error) throw new Error(data.error);
-    allFlights = data.flights.slice(0, 12).map((f, i) => ({ ...f, rank: i + 1 }));
-    renderResults({ rankedFlights: allFlights, warning: '' }, { origin, destination }, null);
+    allFlights = (data.matched || data.flights || []).slice(0, 12).map((f, i) => ({ ...f, rank: i + 1 }));
+    renderResults({ matched: allFlights, others: [], warning: '', isMock: data.isMock }, { origin, destination }, null);
   } catch (err) {
     document.getElementById('results').innerHTML = `<div class="no-results">Error: ${err.message}</div>`;
   }
@@ -380,19 +380,26 @@ function renderResults(data, params, originalRequest) {
   const r = document.getElementById('results');
   r.style.display = 'block';
 
-  const flights = data.rankedFlights || allFlights;
-  if (!flights || !flights.length) {
+  const matched = data.matched || data.rankedFlights || [];
+  const others = data.others || [];
+  const total = matched.length + others.length;
+
+  if (total === 0) {
     r.innerHTML = `<div class="no-results">No flights found. Try adjusting your search.</div>`;
     return;
   }
 
-  const route = params ? `${params.origin || 'SYD'} → ${params.destination || ''}` : '';
+  const dest = params?.destinations?.length > 1
+    ? `${params.origin || 'SYD'} → Multiple cities`
+    : `${params?.origin || 'SYD'} → ${params?.destination || ''}`;
+
+  const filtersActive = params?.filters && Object.values(params.filters).some(v => v !== null && v !== undefined);
 
   r.innerHTML = `
     ${data.warning ? `<div class="warning-banner">⚠ ${data.warning}</div>` : ''}
     ${data.isMock ? '<div class="mock-banner">Demo data — switch to live API for real flights.</div>' : ''}
     <div class="results-bar">
-      <div class="results-title">${flights.length} flights found${route ? ' · ' + route : ''} · via Google Flights</div>
+      <div class="results-title">${matched.length} matching · ${others.length} other · ${dest} · Google Flights</div>
       <select class="sort-sel" onchange="sortBy(this.value)">
         <option value="rank">AI recommended</option>
         <option value="price">Cheapest first</option>
@@ -400,34 +407,39 @@ function renderResults(data, params, originalRequest) {
         <option value="duration">Shortest flight</option>
       </select>
     </div>
+    ${matched.length > 0 ? `
+    <div class="section-label" style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent-text);margin-bottom:8px;font-weight:500;">
+      ${filtersActive ? `Matching your requirements (${matched.length})` : `Best options (${matched.length})`}
+    </div>
+    <div class="table-wrap" style="margin-bottom:1.25rem;">
+      <table>
+        <thead><tr><th>#</th><th>Airline</th><th>${params?.destinations?.length > 1 ? 'To' : 'Depart'}</th><th>Return</th><th>Stopover</th><th>Duration</th><th>Price (A$)</th><th></th></tr></thead>
+        <tbody id="flightBodyMatched"></tbody>
+      </table>
+    </div>` : ''}
+    ${others.length > 0 ? `
+    <div class="section-label" style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin-bottom:8px;font-weight:500;${matched.length > 0 ? 'margin-top:.5rem;' : ''}">
+      ${matched.length > 0 ? `Other available options (${others.length})` : `Available flights (${others.length})`}
+    </div>
     <div class="table-wrap">
       <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Airline</th>
-            <th>Depart</th>
-            <th>Return</th>
-            <th>Stopover</th>
-            <th>Duration</th>
-            <th>Trend</th>
-            <th>Price (A$)</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="flightBody"></tbody>
+        <thead><tr><th>#</th><th>Airline</th><th>${params?.destinations?.length > 1 ? 'To' : 'Depart'}</th><th>Return</th><th>Stopover</th><th>Duration</th><th>Price (A$)</th><th></th></tr></thead>
+        <tbody id="flightBodyOthers"></tbody>
       </table>
-    </div>`;
+    </div>` : ''}`;
 
-  renderRows(flights);
+  if (matched.length > 0) renderRows(matched, 'flightBodyMatched', true);
+  if (others.length > 0) renderRows(others, 'flightBodyOthers', false);
+  allFlights = [...matched, ...others];
   r.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-function renderRows(flights) {
-  const tbody = document.getElementById('flightBody');
+
+function renderRows(flights, tbodyId, isPrimary) {
+  const tbody = document.getElementById(tbodyId || 'flightBodyMatched');
   if (!tbody) return;
   tbody.innerHTML = '';
-  expandedId = null;
+  if (tbodyId === 'flightBodyMatched') expandedId = null;
 
   flights.forEach((f, i) => {
     const isTop = i === 0;
